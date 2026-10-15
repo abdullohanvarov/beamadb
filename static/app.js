@@ -388,15 +388,19 @@ async function directConnectTarget(host, port) {
       body: JSON.stringify({ host, port })
     });
     const data = await res.json();
-    if (res.ok && data.ok) {
+    const isSuccess = res.ok && data.ok && !/failed|cannot|unable|refused|error|fault|timed out/i.test(data.message || '');
+    if (isSuccess) {
       showToast(data.message || `Connected to ${host}:${port}`, 'success');
       playFeedbackTone('success');
+      loadDevices();
     } else {
-      showToast(data.error || 'Connection failed', 'error');
+      const errMsg = data.error || data.message || `Failed to connect to ${host}:${port}`;
+      showToast(errMsg, 'error');
       playFeedbackTone('error');
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
+    playFeedbackTone('error');
   }
 }
 

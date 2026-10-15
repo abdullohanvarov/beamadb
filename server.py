@@ -518,12 +518,18 @@ class RequestHandler(SimpleHTTPRequestHandler):
             state.log(f"Connecting to {target}...")
             c_code, c_out, c_err = run_adb(["connect", target], timeout=10)
             full_out = f"{c_out}\n{c_err}".strip()
+            lower_out = full_out.lower()
 
-            if "connected to" in full_out.lower() or c_code == 0:
+            # adb connect often exits with returncode 0 even on failure (e.g., 'failed to connect to ...: Connection refused')
+            has_error = any(k in lower_out for k in ["failed", "cannot", "unable", "refused", "no route", "timed out", "timeout", "fault"])
+            is_connected = ("connected to" in lower_out or "already connected to" in lower_out) and not has_error
+
+            if is_connected:
                 state.log(f"Connected to {target}")
                 self.send_json_response(200, {"ok": True, "target": target, "message": full_out})
             else:
-                self.send_json_response(400, {"ok": False, "error": full_out or "Connection failed."})
+                state.log(f"Connection failed for {target}: {full_out}")
+                self.send_json_response(400, {"ok": False, "error": full_out or "Connection failed. Ensure device is on the same Wi-Fi."})
 
         elif path == "/api/disconnect":
             device = (body.get("device") or "").strip()
