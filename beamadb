@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""
+BeamADB - Unified CLI & GUI Launcher
+Usage:
+  beamadb [command]
+
+Commands:
+  (no args) / ui / gui   Launch BeamADB graphical web interface in browser
+  pair / qr              Terminal QR pairing mode: scan QR code directly in terminal
+  code <ip:port> <code>  Manual pair with IP, port, and 6-digit pairing code
+  connect <ip:port>      Connect to an already-paired device (or default port 5555)
+  disconnect [device]    Disconnect a wireless device (or all devices)
+  devices / list         List currently connected devices
+  discovered / mdns      List discovered ADB endpoints on local Wi-Fi
+  usb                    Switch currently plugged-in USB device to wireless
+  restart                Restart ADB server
+  status                 Check ADB daemon and background server status
+  help / --help / -h     Show this help message
+"""
+
+import sys
+import os
+import time
+import subprocess
+import re
+import uuid
+import random
+import signal
+from pathlib import Path
+
+# Resolve directory of BeamADB
+BASE_DIR = Path(__file__).resolve().parent
+# If installed in /usr/bin, package data is in /usr/share/beamadb
+if not (BASE_DIR / "server.py").exists() and Path("/usr/share/beamadb/server.py").exists():
+    APP_DIR = Path("/usr/share/beamadb")
+else:
+    APP_DIR = BASE_DIR
+
+# Add pyqrcode to sys.path
+sys.path.insert(0, str(APP_DIR))
+
+PORT = 5588
+URL = f"http://localhost:{PORT}"
+
+def get_adb():
+    candidates = [
+        os.environ.get("ADB_PATH"),
+        "/home/abdulloh/.local/bin/adb",
+        "/home/abdulloh/Android/Sdk/platform-tools/adb",
+        "adb"
+    ]
+    for c in candidates:
+        if not c:
+            continue
+        try:
+            res = subprocess.run([c, "version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=2)
+            if res.returncode == 0:
+                return c
+        except Exception:
+            continue
+    return "adb"
+
+ADB_BIN = get_adb()
+
+def run_adb(args, timeout=10):
+    cmd = [ADB_BIN] + [str(a) for a in args]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+        return res.returncode, res.stdout.strip(), res.stderr.strip()
+    except Exception as e:
+        return -1, "", str(e)
+
+# Colors for terminal output
+class Colors:
+    GREEN = "\033[92m"
+    CYAN = "\033[96m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RESET = "\033[0m"
+
+def print_banner():
+    print(f"{Colors.GREEN}{Colors.BOLD}╔══════════════════════════════════════════════════════════════╗{Colors.RESET}")
+    print(f"{Colors.GREEN}{Colors.BOLD}║                          BeamADB                             ║{Colors.RESET}")
+    print(f"{Colors.GREEN}{Colors.BOLD}║         Android Wireless Debugging & QR Pairing Bridge       ║{Colors.RESET}")
+    print(f"{Colors.GREEN}{Colors.BOLD}╚══════════════════════════════════════════════════════════════╝{Colors.RESET}")
+
+def render_terminal_qr(payload):
+    """Renders QR code in terminal using compact Unicode half-block characters"""
+    try:
+        import pyqrcode
+    except ImportError:
+        print(f"{Colors.YELLOW}pyqrcode module not found. Falling back to plain text code.{Colors.RESET}")
+        return False
+
+    qr = pyqrcode.create(payload)
+    matrix = qr.code
+
+    # Add quiet zone border of 2 modules
+    border = 2
+    w = len(matrix[0])
+    full = [[0]*(w + 2*border)]*border
+    for row in matrix:
+        full.append([0]*border + row + [0]*border)
+    full += [[0]*(w + 2*border)]*border
+    if len(full) % 2 != 0:
+        full.append([0]*len(full[0]))
+
+    # Render with inverted half-blocks for standard dark terminal background
+    # 0 = white module (solid on dark terminal), 1 = black module (space on dark terminal)
+    lines = []
+    for y in range(0, len(full), 2):
+        line = []
+        for x in range(len(full[y])):
+            top = full[y][x]
+            bot = full[y+1][x]
+            if not top and not bot:
+                line.append('█')
+            elif not top and bot:
+                line.append('▀')
+            elif top and not bot:
+                line.append('▄')
+            else:
+                line.append(' ')
+        lines.append('  ' + ''.join(line))
+    print('\n'.join(lines))
+    return True
+
+def cmd_pair_cli():
+    print_banner()
+    run_adb(["start-server"])
+
+    session_id = uuid.uuid4().hex[:6]
+    service_name = f"ADB-WIFI-{session_id.upper()}"
+    pairing_code = f"{random.randint(100000, 999999)}"
+    qr_payload = f"WIFI:T:ADB;S:{service_name};P:{pairing_code};;"
+
+    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 On your Android Phone:{Colors.RESET}")
+    print(f"  1. Go to {Colors.BOLD}Settings > Developer options > Wireless debugging{Colors.RESET}")
+    print(f"  2. Tap {Colors.BOLD}'Pair device with QR code'{Colors.RESET}")
+    print(f"  3. Point your phone camera at this QR code:\n")
+
+    rendered = render_terminal_qr(qr_payload)
+    if not rendered:
+        print(f"  Payload: {qr_payload}")
+
+    print(f"\n  Pairing Code : {Colors.GREEN}{Colors.BOLD}{pairing_code}{Colors.RESET}")
+    print(f"  Service Name : {Colors.DIM}{service_name}{Colors.RESET}")
+    print(f"\n{Colors.YELLOW}[*] Listening on local Wi-Fi for phone scan... (Press Ctrl+C to cancel){Colors.RESET}")
+
+    start_time = time.time()
+    paired_host = None
+
+    try:
+        while time.time() - start_time < 120:
+            # Poll discovered services
+            _, out, _ = run_adb(["mdns", "services"], timeout=2)
+            for line in out.splitlines():
+                parts = re.split(r'\s+', line.strip())
+                if len(parts) >= 3 and parts[1] == "_adb-tls-pairing._tcp":
+                    svc_name = parts[0]
+                    addr = parts[2]
+                    host, port = addr.split(":", 1) if ":" in addr else (addr, "")
+                    
+                    if service_name in svc_name or (time.time() - start_time > 3 and not paired_host):
+                        print(f"\n{Colors.GREEN}[+] Phone detected at {host}:{port}!{Colors.RESET}")
+                        print(f"[*] Authenticating TLS pairing keys...")
+                        
+                        p_code, p_out, p_err = run_adb(["pair", f"{host}:{port}", pairing_code], timeout=15)
+                        full_pair = f"{p_out}\n{p_err}".strip()
+                        
+                        if "Successfully paired" in full_pair or p_code == 0:
+                            print(f"{Colors.GREEN}[✓] Pairing Successful!{Colors.RESET}")
+                            print(f"[*] Establishing wireless connection...")
+                            paired_host = host
+                            break
+                        else:
+                            print(f"{Colors.RED}[!] Pairing failed: {full_pair}{Colors.RESET}")
+                            return
+
+            if paired_host:
+                break
+            time.sleep(1.0)
+
+        if not paired_host:
+            print(f"\n{Colors.RED}[!] Pairing timed out. Ensure your phone and PC are on the exact same Wi-Fi network.{Colors.RESET}")
+            return
+
+        # Connect step
+        time.sleep(1.0)
+        connected = False
+        for _ in range(8):
+            _, out, _ = run_adb(["mdns", "services"], timeout=2)
+            for line in out.splitlines():
+                parts = re.split(r'\s+', line.strip())
+                if len(parts) >= 3 and parts[1] == "_adb-tls-connect._tcp":
+                    addr = parts[2]
+                    h, p = addr.split(":", 1) if ":" in addr else (addr, "")
+                    if h == paired_host:
+                        target = f"{h}:{p}"
+                        print(f"[*] Connecting to {target}...")
+                        c_code, c_out, _ = run_adb(["connect", target], timeout=8)
+                        if "connected to" in c_out.lower() or c_code == 0:
+                            print(f"{Colors.GREEN}{Colors.BOLD}[✓] Successfully connected to {target}! 🎉{Colors.RESET}")
+                            connected = True
+                            break
+            if connected:
+                break
+            time.sleep(1.0)
+
+        if not connected:
+            # Check devices
+            _, d_out, _ = run_adb(["devices"], timeout=2)
+            if paired_host in d_out:
+                print(f"{Colors.GREEN}{Colors.BOLD}[✓] Device auto-connected via ADB mDNS! 🎉{Colors.RESET}")
+            else:
+                print(f"{Colors.YELLOW}[*] Paired! If not auto-connected, check the IP & Port on your Wireless Debugging screen and run:{Colors.RESET}")
+                print(f"    beamadb connect {paired_host}:<PORT>")
+
+    except KeyboardInterrupt:
+        print(f"\n{Colors.YELLOW}[*] Pairing cancelled by user.{Colors.RESET}")
+
+def cmd_manual_pair(args):
+    if len(args) < 2:
+        print("Usage: beamadb code <ip:port> <6-digit-code> [connect-port]")
+        return
+    target = args[0]
+    code = args[1]
+    connect_port = args[2] if len(args) > 2 else None
+
+    print(f"[*] Pairing with {target} using code {code}...")
+    p_code, p_out, p_err = run_adb(["pair", target, code], timeout=15)
+    full_out = f"{p_out}\n{p_err}".strip()
+    if "Successfully paired" in full_out or p_code == 0:
+        print(f"{Colors.GREEN}[✓] Successfully paired to {target}!{Colors.RESET}")
+        host = target.split(":")[0]
+        if connect_port:
+            conn_target = f"{host}:{connect_port}"
+            print(f"[*] Connecting to {conn_target}...")
+            _, c_out, _ = run_adb(["connect", conn_target], timeout=8)
+            print(c_out)
+        else:
+            print(f"[*] You can now connect using: beamadb connect {host}:<CONNECT_PORT>")
+    else:
+        print(f"{Colors.RED}[!] Pairing failed: {full_out}{Colors.RESET}")
+
+def cmd_connect(args):
+    if not args:
+        print("Usage: beamadb connect <ip:port>")
+        return
+    target = args[0]
+    if ":" not in target:
+        target = f"{target}:5555"
+    print(f"[*] Connecting to {target}...")
+    _, out, err = run_adb(["connect", target], timeout=8)
+    print(out or err)
+
+def cmd_disconnect(args):
+    target = args[0] if args else ""
+    if target and target.lower() != "all":
+        print(f"[*] Disconnecting {target}...")
+        _, out, err = run_adb(["disconnect", target], timeout=6)
+        print(out or err)
+    else:
+        print("[*] Disconnecting all wireless devices...")
+        _, out, err = run_adb(["disconnect"], timeout=6)
+        print(out or err)
+
+def cmd_devices():
+    _, out, _ = run_adb(["devices", "-l"], timeout=4)
+    lines = out.splitlines()
+    print(f"{Colors.BOLD}{lines[0] if lines else 'List of devices attached'}{Colors.RESET}")
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = re.split(r'\s+', line)
+        serial = parts[0]
+        status = parts[1] if len(parts) > 1 else ""
+        is_wireless = bool(re.match(r'^\d+\.\d+\.\d+\.\d+:\d+$', serial))
+        color = Colors.CYAN if is_wireless else Colors.GREEN
+        type_badge = f"{Colors.BOLD}[Wi-Fi]{Colors.RESET}" if is_wireless else f"{Colors.BOLD}[USB]{Colors.RESET}"
+        print(f"  {color}{serial:<24}{Colors.RESET} {type_badge} {status} {' '.join(parts[2:])}")
+
+def cmd_discovered():
+    print(f"{Colors.BOLD}Scanning local network for ADB mDNS endpoints...{Colors.RESET}\n")
+    _, out, _ = run_adb(["mdns", "services"], timeout=3)
+    lines = out.splitlines()
+    found = False
+    for line in lines:
+        parts = re.split(r'\s+', line.strip())
+        if len(parts) >= 3 and ("_tcp" in parts[1] or "_adb" in parts[1]):
+            found = True
+            name = parts[0]
+            stype = parts[1]
+            addr = parts[2]
+            badge = f"{Colors.YELLOW}[Pairing]{Colors.RESET}" if "pairing" in stype else f"{Colors.GREEN}[Connect]{Colors.RESET}"
+            print(f"  {badge:<18} {addr:<22} {name} ({stype})")
+    if not found:
+        print("  No mDNS endpoints currently broadcasting on this subnet.")
+
+def cmd_usb():
+    _, out, _ = run_adb(["devices"], timeout=3)
+    usb_devs = []
+    for line in out.splitlines()[1:]:
+        parts = re.split(r'\s+', line.strip())
+        if len(parts) >= 2 and parts[1] == "device":
+            if not re.match(r'^\d+\.\d+\.\d+\.\d+:\d+$', parts[0]):
+                usb_devs.append(parts[0])
+
+    if not usb_devs:
+        print(f"{Colors.YELLOW}[!] No USB devices detected with status 'device'. Connect phone via USB first.{Colors.RESET}")
+        return
+
+    dev = usb_devs[0]
+    print(f"[*] Found USB device: {dev}")
+    print(f"[*] Activating TCP/IP mode on port 5555...")
+    run_adb(["-s", dev, "tcpip", "5555"], timeout=8)
+    time.sleep(1.0)
+
+    # Detect IP
+    _, ip_out, _ = run_adb(["-s", dev, "shell", "ip -4 route show"], timeout=3)
+    m = re.search(r'dev\s+wlan0\s+proto\s+\w+\s+scope\s+\w+\s+src\s+([\d\.]+)', ip_out)
+    ip_addr = m.group(1) if m else None
+    if not ip_addr:
+        _, ip_out2, _ = run_adb(["-s", dev, "shell", "ip -4 addr show wlan0"], timeout=3)
+        m2 = re.search(r'inet\s+([\d\.]+)/', ip_out2)
+        ip_addr = m2.group(1) if m2 else None
+
+    if not ip_addr:
+        print(f"{Colors.YELLOW}[!] TCP/IP 5555 enabled, but could not detect Wi-Fi IP automatically.{Colors.RESET}")
+        print("Check your phone Wi-Fi IP in Settings > About Phone > Status, then run: beamadb connect <IP>:5555")
+        return
+
+    target = f"{ip_addr}:5555"
+    print(f"[*] Connecting wirelessly to {target}...")
+    _, c_out, _ = run_adb(["connect", target], timeout=8)
+    print(f"{Colors.GREEN}{Colors.BOLD}[✓] Switched to wireless mode ({target})! You can now unplug the USB cable. 🎉{Colors.RESET}")
+
+def is_server_running():
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{URL}/api/status", timeout=1) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+def start_server_daemon():
+    if is_server_running():
+        return True
+    
+    server_script = APP_DIR / "server.py"
+    log_file = APP_DIR / "server.log"
+    subprocess.Popen(
+        [sys.executable, "-u", str(server_script)],
+        stdout=open(log_file, "a"),
+        stderr=subprocess.STDOUT,
+        preexec_fn=os.setpgrp
+    )
+    for _ in range(25):
+        if is_server_running():
+            return True
+        time.sleep(0.2)
+    return False
+
+def cmd_ui():
+    print(f"[*] Starting BeamADB GUI on {URL}...")
+    if not is_server_running():
+        start_server_daemon()
+    
+    # Open browser
+    try:
+        if subprocess.run(["which", "xdg-open"], stdout=subprocess.DEVNULL).returncode == 0:
+            subprocess.Popen(["xdg-open", URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif subprocess.run(["which", "firefox"], stdout=subprocess.DEVNULL).returncode == 0:
+            subprocess.Popen(["firefox", URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif subprocess.run(["which", "google-chrome"], stdout=subprocess.DEVNULL).returncode == 0:
+            subprocess.Popen(["google-chrome", URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            print(f"Please open {URL} in your browser.")
+    except Exception:
+        print(f"Please open {URL} in your browser.")
+
+def cmd_help():
+    print_banner()
+    print("""
+Usage:
+  beamadb [command] [options]
+
+Commands:
+  (no args)             Launch BeamADB GUI web application in your browser
+  ui, gui               Explicitly open GUI web interface
+  pair, qr              Terminal QR pairing mode: pair using terminal QR code
+  code <host:port> <code> [connect_port]
+                        Pair manually using IP, pairing port, and 6-digit code
+  connect <host:port>   Connect to a device wirelessly (default port: 5555)
+  disconnect [device]   Disconnect a wireless device (or all devices)
+  devices, list, ls     List currently attached USB and wireless devices
+  discovered, mdns      List local Wi-Fi mDNS ADB pairing and connect services
+  usb                   Switch currently plugged-in USB phone to wireless (tcpip 5555)
+  restart               Restart ADB server daemon
+  status                Show server status and active ports
+  help, --help, -h      Display this documentation
+""")
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        cmd_ui()
+        return
+
+    cmd = args[0].lower()
+    if cmd in ("ui", "gui", "start", "web"):
+        cmd_ui()
+    elif cmd in ("pair", "qr"):
+        cmd_pair_cli()
+    elif cmd in ("code", "manual"):
+        cmd_manual_pair(args[1:])
+    elif cmd in ("connect", "c"):
+        cmd_connect(args[1:])
+    elif cmd in ("disconnect", "d"):
+        cmd_disconnect(args[1:])
+    elif cmd in ("devices", "device", "list", "ls"):
+        cmd_devices()
+    elif cmd in ("discovered", "mdns", "scan"):
+        cmd_discovered()
+    elif cmd in ("usb", "tcpip"):
+        cmd_usb()
+    elif cmd in ("restart", "kill"):
+        print("[*] Restarting ADB daemon...")
+        run_adb(["kill-server"])
+        time.sleep(0.5)
+        run_adb(["start-server"])
+        print(f"{Colors.GREEN}[✓] ADB server restarted.{Colors.RESET}")
+    elif cmd in ("status", "info"):
+        running = is_server_running()
+        status_color = Colors.GREEN if running else Colors.RED
+        print(f"ADB Binary       : {ADB_BIN}")
+        print(f"BeamADB Web Server: {status_color}{'Running' if running else 'Stopped'}{Colors.RESET} ({URL})")
+        cmd_devices()
+    elif cmd in ("help", "--help", "-h"):
+        cmd_help()
+    else:
+        print(f"{Colors.RED}Unknown command: {cmd}{Colors.RESET}")
+        cmd_help()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

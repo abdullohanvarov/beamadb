@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BeamADB
+GenericName=Android Wireless Debugging
+Comment=Fast, accessible Android Wireless Debugging and QR Pairing Bridge
+Exec=/home/abdulloh/.local/bin/beamadb
+Icon=/home/abdulloh/Project/wirelessone/static/icon.svg
+Terminal=false
+Categories=Development;Utility;Android;
+Keywords=beamadb;adb;android;wireless;debug;qr;wifi;
+StartupNotify=true

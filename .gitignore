@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+server.log
+
+# Build artifacts
+dist/
+*.deb
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+*.swp

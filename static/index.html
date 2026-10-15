@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BeamADB - Android Wireless Debugging & QR Bridge</title>
+  <meta name="description" content="BeamADB - Accessible, ultra-fast wireless ADB pairing and management tool for Android devices.">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/qrcode.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <!-- Accessibility Skip Link -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <div class="app-layout">
+    <!-- Top Navigation Header -->
+    <header class="app-header" role="banner">
+      <div class="header-brand">
+        <div class="logo-wrapper">
+          <img src="/static/icon.svg" alt="BeamADB Logo" class="app-logo" width="42" height="42">
+          <span class="status-pulse-dot" id="serverPulse" title="Server Active"></span>
+        </div>
+        <div>
+          <h1 class="app-title">BeamADB</h1>
+          <p class="app-subtitle">Android Wireless Debugging & QR Bridge</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="badge-status" id="adbStatusBadge" role="status" aria-live="polite">
+          <span class="indicator-dot green"></span>
+          <span id="adbStatusText">ADB Ready</span>
+        </div>
+        <button id="btnRestartAdb" class="btn btn-secondary btn-sm" title="Restart ADB Server (Alt+S)" aria-label="Restart ADB Server">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Restart ADB
+        </button>
+        <button id="btnDisconnectAll" class="btn btn-danger btn-sm" title="Disconnect All Wireless Devices" aria-label="Disconnect All Devices">
+          Disconnect All
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main id="main-content" class="app-main" role="main">
+      <!-- Live Connected Devices Section -->
+      <section class="connected-section" aria-labelledby="connectedDevicesHeading">
+        <div class="section-header">
+          <h2 id="connectedDevicesHeading" class="section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            Active Devices (<span id="deviceCount">0</span>)
+          </h2>
+          <button id="btnRefreshDevices" class="btn-icon" title="Refresh Devices List (Alt+R)" aria-label="Refresh Devices">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        </div>
+
+        <div id="deviceList" class="device-grid" role="region" aria-live="polite">
+          <div class="empty-device-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/><path d="M1 1l22 22"/></svg>
+            <p>No devices currently connected wirelessly</p>
+            <span class="hint-text">Pair your phone using QR code or manual code below to start debugging.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Connection Workspace Tabs -->
+      <section class="workspace-section">
+        <!-- Accessible Tab Navigation -->
+        <nav class="tab-nav" role="tablist" aria-label="Connection Methods">
+          <button id="tabBtnQr" class="tab-btn active" role="tab" aria-selected="true" aria-controls="tabPanelQr" tabindex="0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Pair with QR Code</span>
+            <span class="badge-pill">Fastest</span>
+          </button>
+          <button id="tabBtnCode" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabPanelCode" tabindex="-1">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/></svg>
+            <span>Pair with 6-Digit Code</span>
+          </button>
+          <button id="tabBtnDiscovered" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabPanelDiscovered" tabindex="-1">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+            <span>Discovered Devices</span>
+            <span class="badge-count" id="discoveredBadge">0</span>
+          </button>
+          <button id="tabBtnUsb" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabPanelUsb" tabindex="-1">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10m0 0l-3-3m3 3l3-3M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+            <span>USB to Wireless</span>
+          </button>
+        </nav>
+
+        <!-- Tab 1: QR Code Pairing Panel -->
+        <div id="tabPanelQr" class="tab-panel active" role="tabpanel" aria-labelledby="tabBtnQr">
+          <div class="qr-container-card">
+            <div class="qr-visual-column">
+              <!-- QR Wrapper with animated radar ring -->
+              <div class="qr-card">
+                <div class="radar-scanner" id="radarAnimation"></div>
+                <div id="qrCodeTarget" class="qr-code-box" aria-label="Wireless Pairing QR Code"></div>
+              </div>
+
+              <!-- Status Banner -->
+              <div id="qrStatusBox" class="qr-status-box waiting" role="status" aria-live="polite">
+                <div class="spinner-small" id="qrSpinner"></div>
+                <div class="qr-status-text-wrap">
+                  <strong id="qrStatusHeading">Listening for Phone Scan...</strong>
+                  <span id="qrStatusDetail">Point your Android camera at the QR code</span>
+                </div>
+              </div>
+
+              <!-- Actions & Pairing Details -->
+              <div class="qr-meta-box">
+                <div class="meta-row">
+                  <span class="meta-label">Pairing Code:</span>
+                  <span class="meta-value code-highlight" id="qrPairingCode">------</span>
+                  <button class="btn-copy" id="btnCopyCode" title="Copy Code" aria-label="Copy Pairing Code">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-label">Service:</span>
+                  <span class="meta-value" id="qrServiceName">ADB-WIFI-...</span>
+                </div>
+              </div>
+
+              <button id="btnRegenerateQr" class="btn btn-secondary btn-block">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Generate New QR Code
+              </button>
+            </div>
+
+            <!-- Instructions Column -->
+            <div class="qr-instructions-column">
+              <h3 class="instructions-title">How to Pair with QR Code</h3>
+              <ol class="step-guide">
+                <li class="step-item">
+                  <span class="step-number">1</span>
+                  <div class="step-content">
+                    <strong>Connect to Same Wi-Fi</strong>
+                    <p>Ensure both this computer and your Android device are on the exact same local Wi-Fi network.</p>
+                  </div>
+                </li>
+                <li class="step-item">
+                  <span class="step-number">2</span>
+                  <div class="step-content">
+                    <strong>Enable Wireless Debugging</strong>
+                    <p>Open <code>Settings</code> &rarr; <code>Developer options</code> &rarr; toggle on <code>Wireless debugging</code>.</p>
+                  </div>
+                </li>
+                <li class="step-item">
+                  <span class="step-number">3</span>
+                  <div class="step-content">
+                    <strong>Tap "Pair device with QR code"</strong>
+                    <p>Tap inside Wireless Debugging and select <strong>Pair device with QR code</strong>.</p>
+                  </div>
+                </li>
+                <li class="step-item">
+                  <span class="step-number">4</span>
+                  <div class="step-content">
+                    <strong>Scan & Done!</strong>
+                    <p>Scan this QR code. BeamADB automatically handles TLS security authentication and connects your phone wirelessly.</p>
+                  </div>
+                </li>
+              </ol>
+
+              <div class="troubleshoot-callout">
+                <strong>💡 Tip: Developer options not showing?</strong>
+                <p>Go to <code>Settings</code> &rarr; <code>About Phone</code> &rarr; tap <strong>Build Number</strong> 7 times until you see "You are now a developer!".</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Manual 6-Digit Code Pairing Panel -->
+        <div id="tabPanelCode" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnCode" hidden>
+          <div class="panel-card">
+            <div class="form-header">
+              <h3>Pair Device with Pairing Code</h3>
+              <p>On your phone, tap <strong>"Pair device with pairing code"</strong> to reveal the Wi-Fi pairing code and IP & Port.</p>
+            </div>
+
+            <form id="formManualPair" class="form-grid">
+              <div class="form-group">
+                <label for="inputHost">Device IP Address <span class="required">*</span></label>
+                <input type="text" id="inputHost" placeholder="e.g. 192.168.1.50" required pattern="^[\d\.]+$" autocomplete="off">
+                <span class="field-hint">Found under "IP address & Port" on your phone</span>
+              </div>
+
+              <div class="form-group">
+                <label for="inputPairPort">Pairing Port <span class="required">*</span></label>
+                <input type="number" id="inputPairPort" placeholder="e.g. 37125" required min="1024" max="65535">
+                <span class="field-hint">The port shown in the Pairing Code popup dialog</span>
+              </div>
+
+              <div class="form-group">
+                <label for="inputPairCode">6-Digit Pairing Code <span class="required">*</span></label>
+                <input type="text" id="inputPairCode" placeholder="e.g. 849201" required maxlength="8" autocomplete="off" class="code-input">
+                <span class="field-hint">The 6 digits shown on your phone screen</span>
+              </div>
+
+              <div class="form-group">
+                <label for="inputConnectPort">Connect Port <span class="optional">(Optional)</span></label>
+                <input type="number" id="inputConnectPort" placeholder="e.g. 41235" min="1024" max="65535">
+                <span class="field-hint">Main port on the Wireless Debugging main screen</span>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="btnSubmitPair">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  Pair & Connect Device
+                </button>
+              </div>
+            </form>
+
+            <div id="manualPairStatus" class="result-banner" role="status" aria-live="polite" hidden></div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Discovered Devices Panel -->
+        <div id="tabPanelDiscovered" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnDiscovered" hidden>
+          <div class="panel-card">
+            <div class="form-header">
+              <h3>Local Network mDNS Discovered Endpoints</h3>
+              <p>Devices advertising Android Debug Bridge on your current Wi-Fi network.</p>
+            </div>
+
+            <div id="discoveredList" class="discovered-table-wrap">
+              <table class="discovered-table">
+                <thead>
+                  <tr>
+                    <th>Service Name</th>
+                    <th>Type</th>
+                    <th>IP & Port</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="discoveredTableBody">
+                  <tr>
+                    <td colspan="4" class="text-center text-muted">Searching for local ADB services...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <hr class="divider">
+
+            <div class="direct-connect-box">
+              <h4>Direct Connect (Already Paired or Port 5555)</h4>
+              <form id="formDirectConnect" class="inline-form">
+                <input type="text" id="directHost" placeholder="IP Address (e.g. 192.168.1.50)" required>
+                <input type="number" id="directPort" placeholder="Port" value="5555" required style="max-width: 120px;">
+                <button type="submit" class="btn btn-secondary">Connect</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: USB to Wireless Panel -->
+        <div id="tabPanelUsb" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnUsb" hidden>
+          <div class="panel-card">
+            <div class="form-header">
+              <h3>1-Click USB to Wireless Migration</h3>
+              <p>Have your phone plugged in via USB cable right now? Switch to wireless and unplug the cable!</p>
+            </div>
+
+            <div id="usbDeviceSection">
+              <div class="usb-selector-wrap">
+                <label for="selectUsbDevice">Select Connected USB Device:</label>
+                <div class="inline-form">
+                  <select id="selectUsbDevice" class="form-select">
+                    <option value="">Detecting USB devices...</option>
+                  </select>
+                  <button id="btnSwitchUsbToWifi" class="btn btn-primary">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+                    Switch to Wireless Mode
+                  </button>
+                </div>
+              </div>
+
+              <div class="info-alert">
+                <strong>How this works:</strong>
+                <p>BeamADB enables <code>adb tcpip 5555</code> on your device, retrieves the phone's local Wi-Fi IP address, connects wirelessly, and lets you unplug the USB cable immediately!</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Terminal / Shell Drawer Modal -->
+      <dialog id="modalShell" class="modal" aria-labelledby="modalShellTitle">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="modalShellTitle">Interactive Device Shell (<span id="shellDeviceName"></span>)</h3>
+            <button class="btn-close" id="btnCloseShell" aria-label="Close Shell">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="quick-commands">
+              <span class="quick-title">Quick commands:</span>
+              <button class="chip-btn" data-cmd="ip addr">IP Info</button>
+              <button class="chip-btn" data-cmd="getprop ro.build.version.release">Android Version</button>
+              <button class="chip-btn" data-cmd="dumpsys battery">Battery Status</button>
+              <button class="chip-btn" data-cmd="pm list packages -3">Installed Apps</button>
+            </div>
+            <pre id="shellOutput" class="terminal-box">Ready. Enter command below.</pre>
+            <form id="formShellCmd" class="terminal-input-wrap">
+              <span class="prompt">$</span>
+              <input type="text" id="inputShellCmd" placeholder="e.g. ls /sdcard, dumpsys wifi, logcat -d -t 20" autocomplete="off">
+              <button type="submit" class="btn btn-primary btn-sm">Run</button>
+            </form>
+          </div>
+        </div>
+      </dialog>
+
+      <!-- Live Screenshot Modal -->
+      <dialog id="modalScreenshot" class="modal" aria-labelledby="modalScreenshotTitle">
+        <div class="modal-content modal-screenshot">
+          <div class="modal-header">
+            <h3 id="modalScreenshotTitle">Live Screenshot Preview</h3>
+            <div class="header-btns">
+              <button id="btnRefreshScreenshot" class="btn btn-secondary btn-sm">Refresh</button>
+              <a id="btnDownloadScreenshot" class="btn btn-primary btn-sm" download="android-screenshot.png">Download</a>
+              <button class="btn-close" id="btnCloseScreenshot" aria-label="Close Screenshot">&times;</button>
+            </div>
+          </div>
+          <div class="modal-body text-center">
+            <div id="screenshotLoading" class="spinner-large" hidden></div>
+            <img id="imgScreenshot" alt="Device Screenshot" class="device-screen-img">
+          </div>
+        </div>
+      </dialog>
+    </main>
+
+    <!-- Footer with Keyboard Shortcuts -->
+    <footer class="app-footer">
+      <div class="footer-shortcuts">
+        <span>Keyboard:</span>
+        <kbd>Alt+1</kbd> QR Code &nbsp;|&nbsp;
+        <kbd>Alt+2</kbd> 6-Digit Code &nbsp;|&nbsp;
+        <kbd>Alt+3</kbd> Discovered &nbsp;|&nbsp;
+        <kbd>Alt+R</kbd> Refresh
+      </div>
+      <div class="footer-meta">
+        <span>BeamADB v1.0 • Fast Wireless Android Bridge</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+</body>
+</html>
