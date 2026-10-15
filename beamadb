@@ -28,6 +28,12 @@ import random
 import signal
 from pathlib import Path
 
+# Ensure unbuffered output in terminals and pipes
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 # Resolve directory of BeamADB
 BASE_DIR = Path(__file__).resolve().parent
 # If installed in /usr/bin, package data is in /usr/share/beamadb
