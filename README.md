@@ -31,6 +31,17 @@ Works seamlessly both as an **accessible modern Web GUI** and as an **instant, z
 - **🌐 Local Network mDNS Auto-Discovery**:
   - Automatically queries local network for `_adb-tls-pairing._tcp` and `_adb-tls-connect._tcp` services.
   - Shows phone model name and advertised pairing/connect ports in real time.
+- **📱 Real-time Screen & Camera Mirroring (Scrcpy)**:
+  - 1-Click native screen mirroring with full mouse and keyboard control.
+  - **Live Camera Mirroring**: Stream your phone's camera (front, back, or external) directly as a high-speed video monitor (Android 12+).
+  - Configurable options: Stay awake, turn device display off while mirroring, mute audio, and selectable frame rate (FPS).
+- **📁 Full Device File Explorer**:
+  - Browse, navigate, and manage device storage (`/sdcard`, `Downloads`, `DCIM`, `Documents`, etc.) with interactive breadcrumbs.
+  - **Upload Files & Folders**: Single/multi-file upload, whole directory upload, and seamless drag-and-drop right onto the explorer table.
+  - **Download Files & Folders**: 1-click file download or automatic zipped directory download.
+  - **File Operations**: Create new directories, delete files/folders permanently, and rename files.
+  - **Real-time Search**: Instant client-side filtering by name.
+  - **Storage Gauge**: Live indicator showing total, used, and free storage space.
 - **🔌 1-Click USB to Wireless Migration**:
   - Phone plugged in via USB? Run `beamadb usb` or click **"Switch to Wireless"** to enable `tcpip 5555`, fetch the phone's Wi-Fi IP address, connect wirelessly, and safely unplug the cable.
 - **📱 Active Device Management**:
@@ -117,6 +128,12 @@ BeamADB includes a comprehensive CLI that works in headless environments or deve
 | `beamadb devices` | List currently connected USB and Wi-Fi devices with details |
 | `beamadb discovered` | Scan and display local Wi-Fi mDNS ADB pairing and connect services |
 | `beamadb usb` | Switch a connected USB device to wireless mode (port 5555) |
+| `beamadb scrcpy [device]` | Launch native Scrcpy screen mirroring |
+| `beamadb camera [device]` | Launch native Scrcpy camera mirroring (Android 12+) |
+| `beamadb files [device] [path]` | Browse device filesystem from CLI |
+| `beamadb pull <device> <remote> [local]` | Download file or folder from device |
+| `beamadb push <device> <local> <remote>` | Upload file or folder to device |
+| `beamadb rm <device> <remote>` | Delete file or folder on device |
 | `beamadb disconnect <ip:port>` | Disconnect a specific wireless device |
 | `beamadb disconnect all` | Disconnect all connected wireless devices |
 | `beamadb restart` | Kill and restart the local ADB server daemon |

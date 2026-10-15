@@ -329,6 +329,265 @@
           </div>
         </div>
       </dialog>
+
+      <!-- Scrcpy Screen & Camera Modal -->
+      <dialog id="modalScrcpy" class="modal" aria-labelledby="modalScrcpyTitle">
+        <div class="modal-content modal-scrcpy">
+          <div class="modal-header">
+            <h3 id="modalScrcpyTitle">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              Scrcpy Screen &amp; Camera Mirror (<span id="scrcpyDeviceSerial"></span>)
+            </h3>
+            <button class="btn-close" id="btnCloseScrcpy" aria-label="Close Scrcpy">&times;</button>
+          </div>
+          <div class="modal-body">
+            <!-- Mirror Status Banner -->
+            <div id="scrcpyActiveBanner" class="scrcpy-status-banner" style="display: none;">
+              <div class="scrcpy-status-info">
+                <span class="indicator-dot green"></span>
+                <span id="scrcpyStatusText">Mirroring session is active</span>
+              </div>
+              <button id="btnStopScrcpy" class="btn btn-danger btn-sm">Stop Mirroring</button>
+            </div>
+
+            <!-- Mode Switcher Tabs -->
+            <div class="scrcpy-mode-tabs">
+              <button type="button" class="scrcpy-mode-tab active" id="btnModeScreen" onclick="switchScrcpyMode('screen')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                Screen Mirror
+              </button>
+              <button type="button" class="scrcpy-mode-tab" id="btnModeCamera" onclick="switchScrcpyMode('camera')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                Camera Mirror
+              </button>
+            </div>
+
+            <form id="formScrcpyLaunch" onsubmit="handleLaunchScrcpy(event)">
+              <input type="hidden" id="scrcpyTargetDevice" value="">
+              <input type="hidden" id="scrcpyMode" value="screen">
+
+              <!-- Screen Mode Options -->
+              <div id="scrcpyScreenOptions" class="scrcpy-options-group">
+                <div class="scrcpy-checkbox-grid">
+                  <label class="scrcpy-check-card">
+                    <input type="checkbox" id="scrcpyStayAwake" checked>
+                    <div class="check-text">
+                      <strong>Stay Awake</strong>
+                      <span>Prevent phone screen from sleeping</span>
+                    </div>
+                  </label>
+                  <label class="scrcpy-check-card">
+                    <input type="checkbox" id="scrcpyTurnOffScreen">
+                    <div class="check-text">
+                      <strong>Turn Off Screen</strong>
+                      <span>Blank phone display while mirroring to save power</span>
+                    </div>
+                  </label>
+                  <label class="scrcpy-check-card">
+                    <input type="checkbox" id="scrcpyNoAudio">
+                    <div class="check-text">
+                      <strong>Mute Audio</strong>
+                      <span>Do not stream audio from phone</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Camera Mode Options -->
+              <div id="scrcpyCameraOptions" class="scrcpy-options-group" style="display: none;">
+                <div class="form-group mb-3">
+                  <label for="selectScrcpyCamera" class="form-label">Select Device Camera:</label>
+                  <select id="selectScrcpyCamera" class="form-select">
+                    <option value="">Detecting cameras...</option>
+                  </select>
+                  <span class="hint-text mt-1">Mirror your Android device's camera stream directly as a native high-speed video window.</span>
+                </div>
+                <div class="form-row">
+                  <div class="form-group col">
+                    <label for="selectCameraFacing" class="form-label">Facing Direction:</label>
+                    <select id="selectCameraFacing" class="form-select">
+                      <option value="">Auto (Default)</option>
+                      <option value="back">Back Camera</option>
+                      <option value="front">Front Camera</option>
+                      <option value="external">External Camera</option>
+                    </select>
+                  </div>
+                  <div class="form-group col">
+                    <label for="selectCameraFps" class="form-label">Frame Rate (FPS):</label>
+                    <select id="selectCameraFps" class="form-select">
+                      <option value="30" selected>30 FPS</option>
+                      <option value="60">60 FPS</option>
+                      <option value="25">25 FPS</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal-footer-btns">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalScrcpy').close()">Close</button>
+                <button type="submit" class="btn btn-primary" id="btnLaunchScrcpySubmit">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Launch Mirroring
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </dialog>
+
+      <!-- Full Device File Explorer Modal -->
+      <dialog id="modalFileExplorer" class="modal modal-fullscreen" aria-labelledby="modalFileExplorerTitle">
+        <div class="modal-content modal-file-explorer">
+          <div class="modal-header">
+            <div class="explorer-header-left">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <h3 id="modalFileExplorerTitle">Device File Explorer &mdash; <span id="fileExplorerDevice"></span></h3>
+              <div id="fileStoragePill" class="storage-pill">Storage info</div>
+            </div>
+            <div class="header-btns">
+              <button class="btn-close" id="btnCloseFileExplorer" aria-label="Close File Explorer">&times;</button>
+            </div>
+          </div>
+
+          <div class="explorer-toolbar">
+            <!-- Navigation & Breadcrumbs -->
+            <div class="toolbar-nav-row">
+              <button id="btnParentFolder" class="btn btn-secondary btn-sm" title="Go up to parent directory" onclick="navigateParentFolder()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                Up
+              </button>
+              <nav id="fileBreadcrumbs" class="file-breadcrumbs" aria-label="File Breadcrumbs">
+                <!-- Dynamically populated breadcrumb chips -->
+              </nav>
+              <div class="file-search-box">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="fileSearchInput" placeholder="Filter files..." oninput="handleFileSearch(this.value)">
+              </div>
+            </div>
+
+            <!-- Quick Location Bookmarks -->
+            <div class="toolbar-shortcuts-row">
+              <span class="shortcuts-label">Quick Jump:</span>
+              <button class="shortcut-chip" onclick="navigateFolder('/sdcard')">🏠 Internal Storage</button>
+              <button class="shortcut-chip" onclick="navigateFolder('/sdcard/Download')">📥 Downloads</button>
+              <button class="shortcut-chip" onclick="navigateFolder('/sdcard/DCIM')">📷 DCIM (Camera)</button>
+              <button class="shortcut-chip" onclick="navigateFolder('/sdcard/Pictures')">🖼️ Pictures</button>
+              <button class="shortcut-chip" onclick="navigateFolder('/sdcard/Documents')">📄 Documents</button>
+              <button class="shortcut-chip" onclick="navigateFolder('/sdcard/Music')">🎵 Music</button>
+              <button class="shortcut-chip" onclick="navigateFolder('/sdcard/Movies')">🎬 Movies</button>
+              <button class="shortcut-chip" onclick="navigateFolder('/')">💾 Root (/)</button>
+            </div>
+
+            <!-- Action buttons: Upload, New Folder, Refresh -->
+            <div class="toolbar-actions-row">
+              <div class="actions-left">
+                <button class="btn btn-primary btn-sm" onclick="triggerFileUpload()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Upload Files
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="triggerFolderUpload()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+                  Upload Folder
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="openNewFolderModal()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  New Folder
+                </button>
+                <button class="btn btn-icon-sm" title="Refresh folder" onclick="refreshCurrentFolder()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+              </div>
+              <div class="actions-right">
+                <span id="fileCountIndicator" class="text-dim text-sm">0 items</span>
+              </div>
+            </div>
+
+            <!-- Hidden file inputs -->
+            <input type="file" id="fileUploadInput" multiple style="display: none;" onchange="handleFilesSelected(this.files)">
+            <input type="file" id="folderUploadInput" webkitdirectory directory style="display: none;" onchange="handleFilesSelected(this.files)">
+          </div>
+
+          <!-- Uploading progress banner -->
+          <div id="uploadProgressBanner" class="upload-progress-banner" style="display: none;">
+            <div class="progress-details">
+              <div class="spinner-small"></div>
+              <span id="uploadProgressText">Uploading file to device...</span>
+            </div>
+            <div class="progress-bar-wrap">
+              <div id="uploadProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- File Explorer Table Body with Drag & Drop -->
+          <div id="fileDropZone" class="file-drop-zone">
+            <div class="drop-overlay" id="dropOverlay">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <h3>Drop files here to upload</h3>
+              <p>Files will be pushed to the current folder</p>
+            </div>
+
+            <div id="fileTableContainer" class="file-table-container">
+              <table class="file-table" id="fileExplorerTable">
+                <thead>
+                  <tr>
+                    <th class="col-name" onclick="sortFiles('name')">Name <span id="sortIndicatorName">▲</span></th>
+                    <th class="col-size" onclick="sortFiles('size')">Size <span id="sortIndicatorSize"></span></th>
+                    <th class="col-date" onclick="sortFiles('date')">Modified <span id="sortIndicatorDate"></span></th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="fileTableBody">
+                  <tr>
+                    <td colspan="4" class="text-center text-muted" style="padding: 40px;">
+                      <div class="spinner-small" style="margin: 0 auto 10px;"></div>
+                      Loading directory contents...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <!-- New Folder Modal -->
+      <dialog id="modalNewFolder" class="modal modal-sm" aria-labelledby="modalNewFolderTitle">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="modalNewFolderTitle">Create New Folder</h3>
+            <button class="btn-close" onclick="document.getElementById('modalNewFolder').close()">&times;</button>
+          </div>
+          <form id="formNewFolder" onsubmit="handleCreateFolder(event)">
+            <div class="modal-body">
+              <label for="inputNewFolderName" class="form-label">Folder Name:</label>
+              <input type="text" id="inputNewFolderName" class="form-control" placeholder="e.g. MyProject" required autofocus>
+            </div>
+            <div class="modal-footer-btns">
+              <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalNewFolder').close()">Cancel</button>
+              <button type="submit" class="btn btn-primary">Create Folder</button>
+            </div>
+          </form>
+        </div>
+      </dialog>
+
+      <!-- Confirm Delete Modal -->
+      <dialog id="modalConfirmDelete" class="modal modal-sm" aria-labelledby="modalDeleteTitle">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="modalDeleteTitle">Confirm Deletion</h3>
+            <button class="btn-close" onclick="document.getElementById('modalConfirmDelete').close()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to permanently delete:</p>
+            <div id="deleteTargetName" class="delete-target-preview"></div>
+            <p class="text-dim text-sm mt-2">This action cannot be undone on the device.</p>
+          </div>
+          <div class="modal-footer-btns">
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalConfirmDelete').close()">Cancel</button>
+            <button type="button" class="btn btn-danger" id="btnConfirmDeleteAction">Delete Permanently</button>
+          </div>
+        </div>
+      </dialog>
     </main>
 
     <!-- Footer with Keyboard Shortcuts -->

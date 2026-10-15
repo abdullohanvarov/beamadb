@@ -344,6 +344,84 @@ def cmd_usb():
     _, c_out, _ = run_adb(["connect", target], timeout=8)
     print(f"{Colors.GREEN}{Colors.BOLD}[✓] Switched to wireless mode ({target})! You can now unplug the USB cable. 🎉{Colors.RESET}")
 
+def get_first_connected_device():
+    devs = get_connected_devices()
+    if not devs:
+        return None
+    return devs[0].get("serial")
+
+def cmd_scrcpy(args):
+    if not shutil.which("scrcpy"):
+        print(f"{Colors.RED}[!] scrcpy is not installed. Install with: sudo apt install scrcpy{Colors.RESET}")
+        return
+
+    device = args[0] if args and not args[0].startswith("-") else get_first_connected_device()
+    if not device:
+        print(f"{Colors.YELLOW}[!] No connected devices found. Connect a device first.{Colors.RESET}")
+        return
+
+    extra_args = [a for a in args if a != device]
+    cmd = ["scrcpy", "-s", device, f"--window-title=BeamADB: {device}"] + extra_args
+    print(f"[*] Launching scrcpy for {device}...")
+    subprocess.run(cmd)
+
+def cmd_camera(args):
+    if not shutil.which("scrcpy"):
+        print(f"{Colors.RED}[!] scrcpy is not installed. Install with: sudo apt install scrcpy{Colors.RESET}")
+        return
+
+    device = args[0] if args and not args[0].startswith("-") else get_first_connected_device()
+    if not device:
+        print(f"{Colors.YELLOW}[!] No connected devices found. Connect a device first.{Colors.RESET}")
+        return
+
+    extra_args = [a for a in args if a != device]
+    cmd = ["scrcpy", "-s", device, "--video-source=camera", f"--window-title=BeamADB Camera: {device}"] + extra_args
+    print(f"[*] Launching scrcpy camera mode for {device}...")
+    subprocess.run(cmd)
+
+def cmd_pull(args):
+    if len(args) < 2:
+        print("Usage: beamadb pull <device> <remote_path> [local_path]")
+        return
+    device = args[0]
+    remote_path = args[1]
+    local_path = args[2] if len(args) > 2 else "."
+    print(f"[*] Pulling {remote_path} from {device} to {local_path}...")
+    code, out, err = run_adb(["-s", device, "pull", remote_path, local_path], timeout=180)
+    print(out or err)
+
+def cmd_push(args):
+    if len(args) < 3:
+        print("Usage: beamadb push <device> <local_path> <remote_path>")
+        return
+    device = args[0]
+    local_path = args[1]
+    remote_path = args[2]
+    print(f"[*] Pushing {local_path} to {device}:{remote_path}...")
+    code, out, err = run_adb(["-s", device, "push", local_path, remote_path], timeout=180)
+    print(out or err)
+
+def cmd_rm(args):
+    if len(args) < 2:
+        print("Usage: beamadb rm <device> <remote_path>")
+        return
+    device = args[0]
+    remote_path = args[1]
+    print(f"[*] Deleting {remote_path} on {device}...")
+    code, out, err = run_adb(["-s", device, "shell", "rm", "-rf", remote_path], timeout=15)
+    print(f"{Colors.GREEN}[✓] Deleted {remote_path}{Colors.RESET}")
+
+def cmd_files(args):
+    device = args[0] if args and not args[0].startswith("-") else get_first_connected_device()
+    path = args[1] if len(args) > 1 else "/sdcard"
+    if not device:
+        print(f"{Colors.YELLOW}[!] No connected devices found.{Colors.RESET}")
+        return
+    print(f"[*] Listing {path} on {device}:")
+    code, out, err = run_adb(["-s", device, "shell", f"ls -la '{path}/'"], timeout=10)
+    print(out or err)
+
 def is_server_running():
     try:
         import urllib.request
@@ -405,6 +483,14 @@ Commands:
   devices, list, ls     List currently attached USB and wireless devices
   discovered, mdns      List local Wi-Fi mDNS ADB pairing and connect services
   usb                   Switch currently plugged-in USB phone to wireless (tcpip 5555)
+  scrcpy [device]       Launch scrcpy screen mirroring for a connected device
+  camera [device]       Launch scrcpy camera mirroring (requires Android 12+)
+  files [device] [path] List files in directory on a device
+  pull <device> <remote> [local]
+                        Download/pull a file or directory from device
+  push <device> <local> <remote>
+                        Upload/push a file or directory to device
+  rm <device> <remote>  Delete a file or directory on device
   restart               Restart ADB server daemon
   status                Show server status and active ports
   help, --help, -h      Display this documentation
@@ -433,6 +519,18 @@ def main():
         cmd_discovered()
     elif cmd in ("usb", "tcpip"):
         cmd_usb()
+    elif cmd in ("scrcpy", "mirror"):
+        cmd_scrcpy(args[1:])
+    elif cmd in ("camera", "cam"):
+        cmd_camera(args[1:])
+    elif cmd in ("files", "tree"):
+        cmd_files(args[1:])
+    elif cmd in ("pull", "download"):
+        cmd_pull(args[1:])
+    elif cmd in ("push", "upload"):
+        cmd_push(args[1:])
+    elif cmd in ("rm", "delete"):
+        cmd_rm(args[1:])
     elif cmd in ("restart", "kill"):
         print("[*] Restarting ADB daemon...")
         run_adb(["kill-server"])

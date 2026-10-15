@@ -23,6 +23,10 @@ import struct
 import select
 import threading
 import subprocess
+import shutil
+import tempfile
+import shlex
+import mimetypes
 from pathlib import Path
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
@@ -54,6 +58,88 @@ def find_adb():
 
 ADB_BIN = find_adb()
 
+# Find Scrcpy binary
+def find_scrcpy():
+    return shutil.which("scrcpy")
+
+SCRCPY_BIN = find_scrcpy()
+
+def get_scrcpy_cameras(device):
+    scrcpy = find_scrcpy()
+    if not scrcpy:
+        return []
+    try:
+        proc = subprocess.run([scrcpy, "--list-cameras", "-s", device], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
+        output = f"{proc.stdout}\n{proc.stderr}"
+        cameras = []
+        for line in output.splitlines():
+            m = re.search(r'--camera-id=(\d+)\s*\((.+?)\)', line)
+            if m:
+                cameras.append({"id": m.group(1), "description": m.group(2).strip()})
+        return cameras
+    except Exception:
+        return []
+
+def get_storage_info(device, path="/sdcard"):
+    try:
+        _, out, _ = run_adb(["-s", device, "shell", f"df -h {shlex.quote(path)}"], timeout=5)
+        lines = [l.strip() for l in out.splitlines() if l.strip()]
+        if len(lines) >= 2:
+            parts = lines[1].split()
+            if len(parts) >= 5:
+                return {
+                    "size": parts[1],
+                    "used": parts[2],
+                    "avail": parts[3],
+                    "percent": parts[4]
+                }
+    except Exception:
+        pass
+    return None
+
+def parse_ls_listing(output, base_path):
+    pattern = re.compile(
+        r'^([d\-lcbsp][rwx\-sStT]{9})\s+'
+        r'(?:\d+\s+)?'
+        r'(?:\S+\s+){1,2}'
+        r'(\d+)\s+'
+        r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}|[A-Za-z]{3}\s+\d+\s+(?:\d{2}:\d{2}|\d{4}))\s+'
+        r'(.+)$'
+    )
+    norm_base = base_path.rstrip('/') or '/'
+    items = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith('total '):
+            continue
+        m = pattern.match(line)
+        if m:
+            perms, size_str, date_str, name_part = m.groups()
+            link_target = None
+            if ' -> ' in name_part:
+                name, link_target = name_part.split(' -> ', 1)
+            else:
+                name = name_part
+            if name in ('.', '..'):
+                continue
+            is_dir = perms.startswith('d')
+            is_symlink = perms.startswith('l')
+            ext = name.rsplit('.', 1)[1].lower() if ('.' in name and not is_dir) else ''
+            full_path = f"{norm_base}/{name}" if norm_base != '/' else f"/{name}"
+            items.append({
+                "name": name,
+                "path": full_path,
+                "is_dir": is_dir,
+                "is_symlink": is_symlink,
+                "link_target": link_target,
+                "size": int(size_str),
+                "date": date_str,
+                "perms": perms,
+                "ext": ext
+            })
+    items.sort(key=lambda x: (not x["is_dir"] and not x["is_symlink"], x["name"].lower()))
+    return items
+
 class State:
     def __init__(self):
         self.lock = threading.Lock()
@@ -62,6 +148,7 @@ class State:
         self.discovered_services = []
         self.connected_devices = []
         self.logs = []
+        self.scrcpy_procs = {}
 
     def broadcast(self, event_type, data):
         msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
@@ -395,6 +482,125 @@ class RequestHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_json_response(500, {"error": str(e)})
 
+        elif path == "/api/scrcpy/status":
+            qs = parse_qs(parsed.query)
+            device = qs.get("device", [""])[0]
+            with state.lock:
+                proc = state.scrcpy_procs.get(device)
+                is_running = proc is not None and proc.poll() is None
+            self.send_json_response(200, {
+                "installed": shutil.which("scrcpy") is not None,
+                "running": is_running,
+                "device": device
+            })
+
+        elif path == "/api/scrcpy/cameras":
+            qs = parse_qs(parsed.query)
+            device = qs.get("device", [""])[0]
+            if not device:
+                self.send_json_response(400, {"error": "Device is required"})
+                return
+            cams = get_scrcpy_cameras(device)
+            self.send_json_response(200, {
+                "device": device,
+                "cameras": cams
+            })
+
+        elif path == "/api/files/list":
+            qs = parse_qs(parsed.query)
+            device = qs.get("device", [""])[0]
+            dir_path = qs.get("path", ["/sdcard"])[0].strip() or "/sdcard"
+            if not device:
+                self.send_json_response(400, {"error": "Device is required"})
+                return
+
+            norm_path = dir_path.rstrip('/') or '/'
+            # Compute parent path
+            parent_path = str(Path(norm_path).parent) if norm_path != '/' else None
+            if parent_path == norm_path:
+                parent_path = None
+
+            c_code, c_out, c_err = run_adb(["-s", device, "shell", f"ls -la {shlex.quote(norm_path)}/"], timeout=10)
+            if c_code != 0 and not c_out.strip():
+                c_code, c_out, c_err = run_adb(["-s", device, "shell", f"ls -la {shlex.quote(norm_path)}"], timeout=8)
+
+            files = parse_ls_listing(c_out, norm_path)
+            storage = get_storage_info(device, norm_path)
+
+            self.send_json_response(200, {
+                "ok": True,
+                "device": device,
+                "path": norm_path,
+                "parent": parent_path,
+                "files": files,
+                "storage": storage
+            })
+
+        elif path == "/api/files/download":
+            qs = parse_qs(parsed.query)
+            device = qs.get("device", [""])[0]
+            remote_path = qs.get("path", [""])[0].strip()
+            is_dir = qs.get("is_dir", ["0"])[0] in ("1", "true")
+            if not device or not remote_path:
+                self.send_json_response(400, {"error": "Device and path are required"})
+                return
+
+            filename = os.path.basename(remote_path.rstrip('/')) or "download"
+
+            if is_dir:
+                # Directory download: pull and zip
+                temp_dir = tempfile.mkdtemp(prefix="beamadb_dl_")
+                try:
+                    pulled_dir = os.path.join(temp_dir, filename)
+                    p_code, _, p_err = run_adb(["-s", device, "pull", remote_path, pulled_dir], timeout=180)
+                    zip_base = os.path.join(temp_dir, f"{filename}_archive")
+                    zip_path = shutil.make_archive(zip_base, "zip", pulled_dir)
+                    zip_size = os.path.getsize(zip_path)
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/zip")
+                    self.send_header("Content-Disposition", f'attachment; filename="{filename}.zip"')
+                    self.send_header("Content-Length", str(zip_size))
+                    self.end_headers()
+
+                    with open(zip_path, "rb") as f:
+                        shutil.copyfileobj(f, self.wfile)
+                except Exception as e:
+                    self.send_json_response(500, {"error": f"Failed to download folder: {e}"})
+                finally:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                return
+            else:
+                # File download
+                temp_file = tempfile.NamedTemporaryFile(delete=False, prefix="beamadb_dl_")
+                temp_path = temp_file.name
+                temp_file.close()
+                try:
+                    p_code, _, p_err = run_adb(["-s", device, "pull", remote_path, temp_path], timeout=90)
+                    if p_code != 0 or not os.path.exists(temp_path):
+                        self.send_json_response(500, {"error": f"ADB pull failed: {p_err}"})
+                        return
+
+                    file_size = os.path.getsize(temp_path)
+                    mime_type, _ = mimetypes.guess_type(filename)
+                    if not mime_type:
+                        mime_type = "application/octet-stream"
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime_type)
+                    self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                    self.send_header("Content-Length", str(file_size))
+                    self.end_headers()
+
+                    with open(temp_path, "rb") as f:
+                        shutil.copyfileobj(f, self.wfile)
+                except Exception as e:
+                    self.send_json_response(500, {"error": f"Download failed: {e}"})
+                finally:
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                return
+
         elif path == "/api/events":
             # Server-Sent Events (SSE) Stream
             self.send_response(200)
@@ -437,6 +643,61 @@ class RequestHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        if path == "/api/files/upload":
+            qs = parse_qs(parsed.query)
+            device = qs.get("device", [""])[0]
+            dest_dir = qs.get("path", ["/sdcard"])[0].strip() or "/sdcard"
+            filename = qs.get("filename", [""])[0].strip()
+
+            if not device or not filename:
+                self.send_json_response(400, {"error": "Missing device or filename parameter"})
+                return
+
+            content_length = int(self.headers.get("Content-Length", 0))
+            if content_length <= 0:
+                self.send_json_response(400, {"error": "Uploaded file is empty"})
+                return
+
+            temp_file = tempfile.NamedTemporaryFile(delete=False, prefix="beamadb_up_")
+            temp_path = temp_file.name
+            try:
+                remaining = content_length
+                chunk_size = 64 * 1024
+                while remaining > 0:
+                    read_bytes = self.rfile.read(min(remaining, chunk_size))
+                    if not read_bytes:
+                        break
+                    temp_file.write(read_bytes)
+                    remaining -= len(read_bytes)
+                temp_file.flush()
+                temp_file.close()
+
+                # Ensure destination directory exists on phone
+                run_adb(["-s", device, "shell", f"mkdir -p {shlex.quote(dest_dir)}"], timeout=5)
+
+                remote_dest = f"{dest_dir.rstrip('/')}/{filename}"
+                p_code, p_out, p_err = run_adb(["-s", device, "push", temp_path, remote_dest], timeout=180)
+                if p_code == 0:
+                    state.log(f"Uploaded {filename} to {device}:{remote_dest}")
+                    self.send_json_response(200, {
+                        "ok": True,
+                        "message": f"Successfully uploaded {filename}",
+                        "filename": filename,
+                        "path": remote_dest
+                    })
+                else:
+                    self.send_json_response(500, {
+                        "ok": False,
+                        "error": f"Failed to push file to device: {p_err or p_out}"
+                    })
+            except Exception as e:
+                self.send_json_response(500, {"error": f"Upload failed: {e}"})
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            return
+
         body = self.read_json_body()
 
         if path == "/api/qr_session":
@@ -605,6 +866,132 @@ class RequestHandler(SimpleHTTPRequestHandler):
             c, out, err = run_adb(["start-server"], timeout=8)
             state.log("ADB Server restarted.")
             self.send_json_response(200, {"ok": True, "message": "ADB Server restarted."})
+
+        elif path == "/api/scrcpy/start":
+            device = (body.get("device") or "").strip()
+            mode = body.get("mode", "screen")
+            camera_id = body.get("camera_id")
+            camera_facing = body.get("camera_facing")
+            stay_awake = body.get("stay_awake", True)
+            turn_off_screen = body.get("turn_off_screen", False)
+            no_audio = body.get("no_audio", False)
+
+            if not shutil.which("scrcpy"):
+                self.send_json_response(400, {
+                    "ok": False,
+                    "error": "scrcpy is not installed on this machine. Run: sudo apt install scrcpy"
+                })
+                return
+
+            if not device:
+                self.send_json_response(400, {"error": "Device is required"})
+                return
+
+            # Terminate any existing scrcpy for this device
+            with state.lock:
+                old_proc = state.scrcpy_procs.get(device)
+                if old_proc and old_proc.poll() is None:
+                    try:
+                        old_proc.terminate()
+                        old_proc.wait(timeout=2)
+                    except Exception:
+                        pass
+
+            env = os.environ.copy()
+            if "DISPLAY" not in env:
+                env["DISPLAY"] = ":0"
+
+            cmd = ["scrcpy", "-s", device]
+            if mode == "camera":
+                cmd.extend(["--video-source=camera"])
+                if camera_id is not None and str(camera_id).strip():
+                    cmd.append(f"--camera-id={camera_id}")
+                elif camera_facing in ("front", "back", "external"):
+                    cmd.append(f"--camera-facing={camera_facing}")
+                cmd.append(f"--window-title=BeamADB Camera: {device}")
+            else:
+                cmd.append(f"--window-title=BeamADB Mirror: {device}")
+
+            if stay_awake:
+                cmd.append("--stay-awake")
+            if turn_off_screen:
+                cmd.append("--turn-screen-off")
+            if no_audio:
+                cmd.append("--no-audio")
+
+            try:
+                proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                with state.lock:
+                    state.scrcpy_procs[device] = proc
+                state.log(f"Started scrcpy ({mode}) for {device}")
+                self.send_json_response(200, {
+                    "ok": True,
+                    "message": f"Launched scrcpy ({mode}) for {device}",
+                    "mode": mode
+                })
+            except Exception as e:
+                self.send_json_response(500, {"error": f"Failed to launch scrcpy: {e}"})
+
+        elif path == "/api/scrcpy/stop":
+            device = (body.get("device") or "").strip()
+            with state.lock:
+                proc = state.scrcpy_procs.get(device)
+                if proc and proc.poll() is None:
+                    try:
+                        proc.terminate()
+                        proc.wait(timeout=2)
+                    except Exception:
+                        pass
+                    state.scrcpy_procs.pop(device, None)
+                    state.log(f"Stopped scrcpy for {device}")
+                    self.send_json_response(200, {"ok": True, "message": f"Stopped mirroring for {device}"})
+                else:
+                    self.send_json_response(200, {"ok": True, "message": "Mirroring was not active"})
+
+        elif path == "/api/files/delete":
+            device = (body.get("device") or "").strip()
+            remote_path = (body.get("path") or "").strip()
+            if not device or not remote_path or remote_path in ("/", "/system", "/vendor", "/sdcard"):
+                self.send_json_response(400, {"error": "Invalid deletion request or protected path."})
+                return
+
+            d_code, d_out, d_err = run_adb(["-s", device, "shell", f"rm -rf {shlex.quote(remote_path)}"], timeout=15)
+            if d_code == 0:
+                name = os.path.basename(remote_path.rstrip('/'))
+                state.log(f"Deleted {remote_path} on {device}")
+                self.send_json_response(200, {"ok": True, "message": f"Deleted '{name}'"})
+            else:
+                self.send_json_response(500, {"error": d_err or d_out or "Delete failed"})
+
+        elif path == "/api/files/mkdir":
+            device = (body.get("device") or "").strip()
+            parent_dir = (body.get("path") or "/sdcard").strip()
+            folder_name = (body.get("name") or "").strip()
+            if not device or not folder_name:
+                self.send_json_response(400, {"error": "Device and folder name are required."})
+                return
+
+            new_folder_path = f"{parent_dir.rstrip('/')}/{folder_name}"
+            m_code, m_out, m_err = run_adb(["-s", device, "shell", f"mkdir -p {shlex.quote(new_folder_path)}"], timeout=10)
+            if m_code == 0:
+                state.log(f"Created folder {new_folder_path} on {device}")
+                self.send_json_response(200, {"ok": True, "message": f"Created folder '{folder_name}'", "path": new_folder_path})
+            else:
+                self.send_json_response(500, {"error": m_err or m_out or "Failed to create folder"})
+
+        elif path == "/api/files/rename":
+            device = (body.get("device") or "").strip()
+            old_path = (body.get("old_path") or "").strip()
+            new_path = (body.get("new_path") or "").strip()
+            if not device or not old_path or not new_path:
+                self.send_json_response(400, {"error": "Missing parameters for rename."})
+                return
+
+            r_code, r_out, r_err = run_adb(["-s", device, "shell", f"mv {shlex.quote(old_path)} {shlex.quote(new_path)}"], timeout=10)
+            if r_code == 0:
+                self.send_json_response(200, {"ok": True, "message": "Renamed successfully"})
+            else:
+                self.send_json_response(500, {"error": r_err or r_out or "Rename failed"})
 
         else:
             self.send_json_response(404, {"error": "Not Found"})
