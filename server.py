@@ -421,16 +421,33 @@ class RequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
 
+    def translate_path(self, path):
+        clean_path = urlparse(path).path
+        if clean_path.startswith("/static/"):
+            clean_path = clean_path[len("/static"):]
+        elif clean_path == "/" or clean_path == "":
+            clean_path = "/index.html"
+        return super().translate_path(clean_path)
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
+    def do_HEAD(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if not path.startswith("/api/"):
+            return super().do_HEAD()
+        self.send_response(200)
+        self.end_headers()
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        if path == "/":
-            self.path = "/index.html"
-            return super().do_GET()
-
-        elif path.startswith("/static/"):
-            self.path = path[len("/static"):]
+        if not path.startswith("/api/"):
             return super().do_GET()
 
         elif path == "/api/status":

@@ -195,7 +195,23 @@ function updateQrUI(session) {
   } else if (status === 'connected') {
     spinner.style.display = 'none';
     statusHeading.textContent = 'Connected Wirelessly! 🎉';
-    statusDetail.textContent = session.message || `Device connected at ${session.device}`;
+    statusDetail.innerHTML = `
+      Device connected at <strong>${escapeHtml(session.device || '')}</strong>
+      <div class="qr-success-actions" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn btn-primary btn-sm" onclick="openScrcpyModal('${escapeHtml(session.device)}', 'screen')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Mirror Screen
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="openScrcpyModal('${escapeHtml(session.device)}', 'camera')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Camera
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="openFileExplorer('${escapeHtml(session.device)}', 'Paired Device')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          File Explorer
+        </button>
+      </div>
+    `;
     playFeedbackTone('success');
     showToast(`Device ${session.device || ''} connected wirelessly!`, 'success');
   } else if (status === 'error') {
@@ -207,8 +223,11 @@ function updateQrUI(session) {
   }
 }
 
+let currentDevicesList = [];
+
 // Render Active Devices
 function renderDevices(devices = []) {
+  currentDevicesList = devices;
   const container = document.getElementById('deviceList');
   const countEl = document.getElementById('deviceCount');
   const usbSelect = document.getElementById('selectUsbDevice');
@@ -309,25 +328,39 @@ function renderDiscovered(services = []) {
 
   tbody.innerHTML = services.map(s => {
     const isPairing = s.type === '_adb-tls-pairing._tcp';
+    const connDev = (currentDevicesList || []).find(d => d.ip === s.host || (d.serial && d.serial.includes(s.host)));
+
     return `
       <tr>
         <td><strong>${escapeHtml(s.name)}</strong></td>
         <td>
-          <span class="badge ${isPairing ? 'badge-wifi' : 'badge-usb'}">
-            ${escapeHtml(s.type)}
+          <span class="badge ${connDev ? 'badge-wifi' : (isPairing ? 'badge-wifi' : 'badge-usb')}">
+            ${connDev ? 'Connected' : (isPairing ? 'Pairing Port' : 'Connect Port')}
           </span>
         </td>
         <td><code>${escapeHtml(s.address)}</code></td>
         <td>
-          ${isPairing ? `
-            <button class="btn btn-secondary btn-sm" onclick="prefillManualPair('${escapeHtml(s.host)}', '${escapeHtml(s.port)}')">
-              Pair with this
-            </button>
-          ` : `
-            <button class="btn btn-primary btn-sm" onclick="directConnectTarget('${escapeHtml(s.host)}', '${escapeHtml(s.port)}')">
-              Connect
-            </button>
-          `}
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            ${connDev ? `
+              <button class="btn btn-primary btn-sm" onclick="openScrcpyModal('${escapeHtml(connDev.serial)}', 'screen')">
+                Mirror
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="openScrcpyModal('${escapeHtml(connDev.serial)}', 'camera')">
+                Camera
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="openFileExplorer('${escapeHtml(connDev.serial)}', '${escapeHtml(connDev.model || s.name)}')">
+                Files
+              </button>
+            ` : (isPairing ? `
+              <button class="btn btn-secondary btn-sm" onclick="prefillManualPair('${escapeHtml(s.host)}', '${escapeHtml(s.port)}')">
+                Pair with this
+              </button>
+            ` : `
+              <button class="btn btn-primary btn-sm" onclick="directConnectTarget('${escapeHtml(s.host)}', '${escapeHtml(s.port)}')">
+                Connect
+              </button>
+            `)}
+          </div>
         </td>
       </tr>
     `;
@@ -360,7 +393,23 @@ async function handleManualPair(e) {
 
     if (res.ok && data.ok) {
       statusBox.className = 'result-banner success';
-      statusBox.innerHTML = `<strong>Success!</strong> ${escapeHtml(data.message)} ${data.connect_result ? `<br>Connect result: ${escapeHtml(data.connect_result)}` : ''}`;
+      const pairedTarget = data.device || (host && connectPort ? `${host}:${connectPort}` : '');
+      statusBox.innerHTML = `
+        <strong>Success!</strong> ${escapeHtml(data.message)} ${data.connect_result ? `<br>Connect result: ${escapeHtml(data.connect_result)}` : ''}
+        ${pairedTarget ? `
+          <div class="manual-pair-success-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-sm" onclick="openScrcpyModal('${escapeHtml(pairedTarget)}', 'screen')">
+              📱 Mirror Screen
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="openScrcpyModal('${escapeHtml(pairedTarget)}', 'camera')">
+              📷 Camera
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="openFileExplorer('${escapeHtml(pairedTarget)}', 'Paired Device')">
+              📁 Browse Files
+            </button>
+          </div>
+        ` : ''}
+      `;
       playFeedbackTone('success');
       showToast('Device successfully paired!', 'success');
       document.getElementById('formManualPair').reset();

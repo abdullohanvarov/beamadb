@@ -6,9 +6,9 @@
   <title>BeamADB - Android Wireless Debugging & QR Bridge</title>
   <meta name="description" content="BeamADB - Accessible, ultra-fast wireless ADB pairing and management tool for Android devices.">
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/qrcode.min.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=1.2.0">
+  <script src="/static/qrcode.min.js?v=1.2.0" defer></script>
+  <script src="/static/app.js?v=1.2.0" defer></script>
 </head>
 <body>
   <!-- Accessibility Skip Link -->
@@ -50,7 +50,7 @@
         <div class="section-header">
           <h2 id="connectedDevicesHeading" class="section-title">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-            Active Devices (<span id="deviceCount">0</span>)
+            Active &amp; Paired Devices (<span id="deviceCount">0</span>)
           </h2>
           <button id="btnRefreshDevices" class="btn-icon" title="Refresh Devices List (Alt+R)" aria-label="Refresh Devices">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
