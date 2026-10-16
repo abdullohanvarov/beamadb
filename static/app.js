@@ -251,17 +251,23 @@ function renderDevices(devices = []) {
     return;
   }
 
-  container.innerHTML = devices.map(d => `
+  container.innerHTML = devices.map(d => {
+    const hasScreen = (activeScrcpySessions || []).some(s => s.device === d.serial && s.mode === 'screen');
+    const hasCamera = (activeScrcpySessions || []).some(s => s.device === d.serial && s.mode === 'camera');
+
+    return `
     <article class="device-card" aria-label="Device ${escapeHtml(d.model)}">
       <div class="device-card-header">
         <div>
           <h3 class="device-model">${escapeHtml(d.model)}</h3>
           <span class="device-serial">${escapeHtml(d.serial)}</span>
         </div>
-        <div class="device-badges">
+        <div class="device-badges" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
           <span class="badge ${d.is_wireless ? 'badge-wifi' : 'badge-usb'}">
             ${d.is_wireless ? 'Wi-Fi' : 'USB'}
           </span>
+          ${hasScreen ? `<span class="badge-active-mirror" title="Screen Mirror is running"><span class="indicator-dot green"></span> Mirroring</span>` : ''}
+          ${hasCamera ? `<span class="badge-active-camera" title="Camera Streaming is running"><span class="indicator-dot green"></span> Camera</span>` : ''}
         </div>
       </div>
 
@@ -287,11 +293,11 @@ function renderDevices(devices = []) {
       <div class="device-actions">
         <button class="btn btn-primary btn-sm" onclick="openScrcpyModal('${escapeHtml(d.serial)}', 'screen')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          Mirror
+          ${hasScreen ? 'Mirror (Active)' : 'Mirror'}
         </button>
         <button class="btn btn-secondary btn-sm" onclick="openScrcpyModal('${escapeHtml(d.serial)}', 'camera')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          Camera
+          ${hasCamera ? 'Camera (Active)' : 'Camera'}
         </button>
         <button class="btn btn-secondary btn-sm" onclick="openFileExplorer('${escapeHtml(d.serial)}', '${escapeHtml(d.model)}')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -312,7 +318,7 @@ function renderDevices(devices = []) {
         ` : ''}
       </div>
     </article>
-  `).join('');
+  `;}).join('');
 }
 
 // Render Discovered mDNS Services
@@ -748,26 +754,40 @@ document.addEventListener('DOMContentLoaded', () => {
 // SCRCPY SCREEN & CAMERA INTEGRATION
 // ==========================================
 
+let activeScrcpySessions = [];
+
+async function refreshScrcpyStatus(targetDevice = null) {
+  try {
+    const url = targetDevice ? `/api/scrcpy/status?device=${encodeURIComponent(targetDevice)}` : '/api/scrcpy/status';
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data && data.sessions) {
+      activeScrcpySessions = data.sessions;
+      if (currentDevicesList && currentDevicesList.length > 0) {
+        renderDevices(currentDevicesList);
+      }
+    }
+    return data;
+  } catch (err) {
+    console.error('Error refreshing scrcpy status:', err);
+    return null;
+  }
+}
+
 async function openScrcpyModal(device, defaultMode = 'screen') {
   document.getElementById('scrcpyDeviceSerial').textContent = device;
   document.getElementById('scrcpyTargetDevice').value = device;
 
+  const errBanner = document.getElementById('scrcpyLaunchError');
+  if (errBanner) {
+    errBanner.style.display = 'none';
+    errBanner.textContent = '';
+  }
+
   switchScrcpyMode(defaultMode);
 
-  // Check if mirroring is already running
-  try {
-    const res = await fetch(`/api/scrcpy/status?device=${encodeURIComponent(device)}`);
-    const data = await res.json();
-    const activeBanner = document.getElementById('scrcpyActiveBanner');
-    if (data.running) {
-      activeBanner.style.display = 'flex';
-      document.getElementById('scrcpyStatusText').textContent = `Mirroring session active for ${device}`;
-    } else {
-      activeBanner.style.display = 'none';
-    }
-  } catch (e) {
-    console.error('Error fetching scrcpy status:', e);
-  }
+  // Check active sessions for this device
+  await updateModalActiveSessions(device);
 
   // Load cameras if camera mode
   if (defaultMode === 'camera') {
@@ -777,18 +797,56 @@ async function openScrcpyModal(device, defaultMode = 'screen') {
   document.getElementById('modalScrcpy').showModal();
 }
 
+async function updateModalActiveSessions(device) {
+  const container = document.getElementById('scrcpySessionsContainer');
+  if (!container) return;
+
+  try {
+    const data = await refreshScrcpyStatus(device);
+    const deviceSessions = data ? (data.device_sessions || []) : [];
+
+    if (deviceSessions.length > 0) {
+      container.style.display = 'flex';
+      container.innerHTML = `
+        <div style="font-size: 0.82rem; font-weight: 600; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Active Mirroring Sessions:</div>
+        ${deviceSessions.map(s => `
+          <div class="scrcpy-session-card ${s.mode}">
+            <div class="sess-info">
+              <span class="indicator-dot green"></span>
+              <div>
+                <span class="sess-title">${s.mode === 'camera' ? '📷 Camera Mirror' : '📱 Screen Mirror'}</span>
+                <span class="text-muted" style="font-size: 0.78rem; margin-left: 6px;">(PID: ${s.pid})</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-danger btn-sm" onclick="stopScrcpySession('${escapeHtml(s.session_id)}', '${escapeHtml(device)}')">
+              Stop
+            </button>
+          </div>
+        `).join('')}
+      `;
+    } else {
+      container.style.display = 'none';
+      container.innerHTML = '';
+    }
+  } catch (e) {
+    console.error('Error updating modal sessions:', e);
+  }
+}
+
 function switchScrcpyMode(mode) {
   document.getElementById('scrcpyMode').value = mode;
   const btnScreen = document.getElementById('btnModeScreen');
   const btnCamera = document.getElementById('btnModeCamera');
   const screenOpt = document.getElementById('scrcpyScreenOptions');
   const cameraOpt = document.getElementById('scrcpyCameraOptions');
+  const btnText = document.getElementById('btnLaunchScrcpyText');
 
   if (mode === 'camera') {
     btnCamera.classList.add('active');
     btnScreen.classList.remove('active');
     cameraOpt.style.display = 'block';
     screenOpt.style.display = 'none';
+    if (btnText) btnText.textContent = 'Launch Camera Mirror';
 
     const device = document.getElementById('scrcpyTargetDevice').value;
     if (device) loadDeviceCameras(device);
@@ -797,6 +855,7 @@ function switchScrcpyMode(mode) {
     btnCamera.classList.remove('active');
     screenOpt.style.display = 'block';
     cameraOpt.style.display = 'none';
+    if (btnText) btnText.textContent = 'Launch Screen Mirror';
   }
 }
 
@@ -813,15 +872,22 @@ async function loadDeviceCameras(device) {
           <option value="${escapeHtml(c.id)}">Camera ${escapeHtml(c.id)} (${escapeHtml(c.description)})</option>
         `).join('')}
       `;
+      const firstCam = data.cameras[0];
+      if (firstCam && firstCam.facing) {
+        const facingSelect = document.getElementById('selectCameraFacing');
+        if (facingSelect && !facingSelect.value) {
+          facingSelect.value = firstCam.facing;
+        }
+      }
     } else {
       select.innerHTML = `
-        <option value="">Auto Select (Front/Back)</option>
-        <option value="0">Camera 0 (Default Camera)</option>
-        <option value="1">Camera 1 (Secondary Camera)</option>
+        <option value="">Auto Detect (Default Camera)</option>
+        <option value="0">Camera 0 (Primary)</option>
+        <option value="1">Camera 1 (Secondary)</option>
       `;
     }
   } catch (err) {
-    select.innerHTML = '<option value="">Auto Select (Default)</option>';
+    select.innerHTML = '<option value="">Auto Detect (Default)</option>';
   }
 }
 
@@ -829,13 +895,40 @@ async function handleLaunchScrcpy(e) {
   e.preventDefault();
   const device = document.getElementById('scrcpyTargetDevice').value;
   const mode = document.getElementById('scrcpyMode').value;
-  const cameraId = document.getElementById('selectScrcpyCamera').value;
-  const cameraFacing = document.getElementById('selectCameraFacing').value;
-  const stayAwake = document.getElementById('scrcpyStayAwake').checked;
-  const turnOffScreen = document.getElementById('scrcpyTurnOffScreen').checked;
-  const noAudio = document.getElementById('scrcpyNoAudio').checked;
+  const maxSize = document.getElementById('scrcpyMaxSize').value;
+  const maxFps = document.getElementById('scrcpyMaxFps').value;
 
-  showToast(`Launching Scrcpy (${mode === 'camera' ? 'Camera' : 'Screen'})...`, 'info');
+  const btnSubmit = document.getElementById('btnLaunchScrcpySubmit');
+  const btnText = document.getElementById('btnLaunchScrcpyText');
+  const originalText = btnText ? btnText.textContent : 'Launch';
+  const errBanner = document.getElementById('scrcpyLaunchError');
+
+  let cameraId = null;
+  let cameraFacing = null;
+  let cameraFps = null;
+  let stayAwake = true;
+  let turnOffScreen = false;
+  let noAudio = false;
+
+  if (mode === 'camera') {
+    cameraId = document.getElementById('selectScrcpyCamera').value;
+    cameraFacing = document.getElementById('selectCameraFacing').value;
+    cameraFps = document.getElementById('selectCameraFps').value;
+    noAudio = document.getElementById('scrcpyCameraNoAudio').checked;
+  } else {
+    stayAwake = document.getElementById('scrcpyStayAwake').checked;
+    turnOffScreen = document.getElementById('scrcpyTurnOffScreen').checked;
+    noAudio = document.getElementById('scrcpyNoAudio').checked;
+  }
+
+  if (errBanner) {
+    errBanner.style.display = 'none';
+    errBanner.textContent = '';
+  }
+
+  btnSubmit.disabled = true;
+  if (btnText) btnText.innerHTML = '<span class="spinner-small"></span> Initializing...';
+  showToast(`Launching ${mode === 'camera' ? 'Camera Stream' : 'Screen Mirror'} for ${device}...`, 'info');
 
   try {
     const res = await fetch('/api/scrcpy/start', {
@@ -844,8 +937,11 @@ async function handleLaunchScrcpy(e) {
       body: JSON.stringify({
         device,
         mode,
+        max_size: maxSize ? parseInt(maxSize, 10) : 1920,
+        max_fps: maxFps ? parseInt(maxFps, 10) : 0,
         camera_id: cameraId || null,
         camera_facing: cameraFacing || null,
+        camera_fps: cameraFps ? parseInt(cameraFps, 10) : null,
         stay_awake: stayAwake,
         turn_off_screen: turnOffScreen,
         no_audio: noAudio
@@ -853,20 +949,49 @@ async function handleLaunchScrcpy(e) {
     });
     const data = await res.json();
     if (res.ok && data.ok) {
-      showToast(data.message, 'success');
+      showToast(data.message || `Launched scrcpy for ${device}`, 'success');
       playFeedbackTone('success');
-      document.getElementById('scrcpyActiveBanner').style.display = 'flex';
-      document.getElementById('scrcpyStatusText').textContent = `Mirroring session active for ${device}`;
+      await updateModalActiveSessions(device);
       setTimeout(() => {
         document.getElementById('modalScrcpy').close();
-      }, 500);
+      }, 700);
     } else {
-      showToast(data.error || 'Failed to start scrcpy', 'error');
+      const errMsg = data.error || 'Failed to start scrcpy window';
+      if (errBanner) {
+        errBanner.style.display = 'block';
+        errBanner.textContent = `Launch Error:\n${errMsg}`;
+      }
+      showToast(errMsg, 'error');
       playFeedbackTone('error');
     }
   } catch (err) {
+    if (errBanner) {
+      errBanner.style.display = 'block';
+      errBanner.textContent = `Network / Execution Error:\n${err.message}`;
+    }
     showToast(`Error: ${err.message}`, 'error');
     playFeedbackTone('error');
+  } finally {
+    btnSubmit.disabled = false;
+    if (btnText) btnText.textContent = originalText;
+  }
+}
+
+async function stopScrcpySession(sessionId, device) {
+  try {
+    const res = await fetch('/api/scrcpy/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, device: device })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Mirroring session stopped', 'info');
+      await updateModalActiveSessions(device);
+      await refreshScrcpyStatus();
+    }
+  } catch (err) {
+    showToast(`Error stopping session: ${err.message}`, 'error');
   }
 }
 
@@ -879,13 +1004,19 @@ async function stopScrcpy(device) {
     });
     const data = await res.json();
     if (data.ok) {
-      showToast(`Mirroring stopped for ${device}`, 'info');
-      document.getElementById('scrcpyActiveBanner').style.display = 'none';
+      showToast(`Stopped mirroring for ${device}`, 'info');
+      await updateModalActiveSessions(device);
+      await refreshScrcpyStatus();
     }
   } catch (err) {
     showToast(`Error stopping scrcpy: ${err.message}`, 'error');
   }
 }
+
+// Background session status poller
+setInterval(() => {
+  refreshScrcpyStatus();
+}, 4000);
 
 // ==========================================
 // FILE EXPLORER INTEGRATION

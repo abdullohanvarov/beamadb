@@ -31,10 +31,11 @@ Works seamlessly both as an **accessible modern Web GUI** and as an **instant, z
 - **🌐 Local Network mDNS Auto-Discovery**:
   - Automatically queries local network for `_adb-tls-pairing._tcp` and `_adb-tls-connect._tcp` services.
   - Shows phone model name and advertised pairing/connect ports in real time.
-- **📱 Real-time Screen & Camera Mirroring (Scrcpy)**:
-  - 1-Click native screen mirroring with full mouse and keyboard control.
+- **📱 Real-time Screen & Camera Mirroring (Bundled Scrcpy - Linux & Windows)**:
+  - **Self-Contained & Bundled**: Comes bundled with standalone Scrcpy binaries and server for both **Linux** and **Windows** inside the project (`bin/scrcpy/`). Zero manual installation required!
+  - **Multi-Device & Multi-Stream**: Mirror screens and stream cameras of multiple connected Android devices simultaneously in separate windows.
   - **Live Camera Mirroring**: Stream your phone's camera (front, back, or external) directly as a high-speed video monitor (Android 12+).
-  - Configurable options: Stay awake, turn device display off while mirroring, mute audio, and selectable frame rate (FPS).
+  - Configurable options: Adjustable resolution (1080p, 720p, 1440p, or Native), selectable frame rate (60/30 FPS), stay awake, blank device screen, and audio muting.
 - **📁 Full Device File Explorer**:
   - Browse, navigate, and manage device storage (`/sdcard`, `Downloads`, `DCIM`, `Documents`, etc.) with interactive breadcrumbs.
   - **Upload Files & Folders**: Single/multi-file upload, whole directory upload, and seamless drag-and-drop right onto the explorer table.

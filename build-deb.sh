@@ -54,6 +54,10 @@ cp "${DIR}/beamadb" "${BUILD_DIR}/usr/share/beamadb/"
 cp "${DIR}/server.py" "${BUILD_DIR}/usr/share/beamadb/"
 cp -r "${DIR}/static" "${BUILD_DIR}/usr/share/beamadb/"
 cp -r "${DIR}/pyqrcode" "${BUILD_DIR}/usr/share/beamadb/"
+if [ -d "${DIR}/bin" ]; then
+  cp -r "${DIR}/bin" "${BUILD_DIR}/usr/share/beamadb/"
+  chmod -R +x "${BUILD_DIR}/usr/share/beamadb/bin" 2>/dev/null || true
+fi
 rm -rf "${BUILD_DIR}/usr/share/beamadb/pyqrcode/__pycache__"
 chmod +x "${BUILD_DIR}/usr/share/beamadb/beamadb"
 chmod +x "${BUILD_DIR}/usr/share/beamadb/server.py"

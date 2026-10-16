@@ -37,13 +37,34 @@ PORT = int(os.environ.get("PORT", 5588))
 HOST = "0.0.0.0"
 STATIC_DIR = Path(__file__).parent / "static"
 
+# Bundled & Cross-platform Binary Resolution
+def get_bundled_paths():
+    base_dir = Path(__file__).resolve().parent
+    is_win = sys.platform.startswith("win")
+    if is_win:
+        scrcpy_bin = base_dir / "bin" / "scrcpy" / "windows" / "scrcpy.exe"
+        server_jar = base_dir / "bin" / "scrcpy" / "windows" / "scrcpy-server"
+        adb_bin = base_dir / "bin" / "scrcpy" / "windows" / "adb.exe"
+    else:
+        scrcpy_bin = base_dir / "bin" / "scrcpy" / "linux" / "scrcpy"
+        server_jar = base_dir / "bin" / "scrcpy" / "linux" / "scrcpy-server"
+        adb_bin = base_dir / "bin" / "scrcpy" / "linux" / "adb"
+
+    return {
+        "scrcpy": str(scrcpy_bin) if scrcpy_bin.exists() else None,
+        "server": str(server_jar) if server_jar.exists() else None,
+        "adb": str(adb_bin) if adb_bin.exists() else None,
+    }
+
 # Find ADB binary
 def find_adb():
+    bundled = get_bundled_paths()
     candidates = [
         os.environ.get("ADB_PATH"),
+        bundled.get("adb"),
         "/home/abdulloh/.local/bin/adb",
         "/home/abdulloh/Android/Sdk/platform-tools/adb",
-        "adb"
+        "adb.exe" if sys.platform.startswith("win") else "adb"
     ]
     for c in candidates:
         if not c:
@@ -54,28 +75,58 @@ def find_adb():
                 return c
         except Exception:
             continue
-    return "adb"
+    return bundled.get("adb") or ("adb.exe" if sys.platform.startswith("win") else "adb")
 
 ADB_BIN = find_adb()
 
-# Find Scrcpy binary
+# Find Scrcpy binary & server
 def find_scrcpy():
-    return shutil.which("scrcpy")
+    bundled = get_bundled_paths()
+    if bundled.get("scrcpy"):
+        return bundled["scrcpy"]
+    return shutil.which("scrcpy.exe" if sys.platform.startswith("win") else "scrcpy")
+
+def find_scrcpy_server():
+    bundled = get_bundled_paths()
+    if bundled.get("server"):
+        return bundled["server"]
+    for p in ["/usr/share/scrcpy/scrcpy-server", "/usr/local/share/scrcpy/scrcpy-server"]:
+        if os.path.exists(p):
+            return p
+    return None
 
 SCRCPY_BIN = find_scrcpy()
+SCRCPY_SERVER = find_scrcpy_server()
 
 def get_scrcpy_cameras(device):
     scrcpy = find_scrcpy()
     if not scrcpy:
         return []
     try:
-        proc = subprocess.run([scrcpy, "--list-cameras", "-s", device], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
+        env = os.environ.copy()
+        server_jar = find_scrcpy_server()
+        if server_jar:
+            env["SCRCPY_SERVER_PATH"] = server_jar
+        proc = subprocess.run([scrcpy, "--list-cameras", "-s", device], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8, env=env)
         output = f"{proc.stdout}\n{proc.stderr}"
         cameras = []
         for line in output.splitlines():
             m = re.search(r'--camera-id=(\d+)\s*\((.+?)\)', line)
             if m:
-                cameras.append({"id": m.group(1), "description": m.group(2).strip()})
+                cid = m.group(1)
+                desc = m.group(2).strip()
+                facing = ""
+                if "front" in desc.lower():
+                    facing = "front"
+                elif "back" in desc.lower():
+                    facing = "back"
+                elif "external" in desc.lower():
+                    facing = "external"
+                cameras.append({
+                    "id": cid,
+                    "description": desc,
+                    "facing": facing
+                })
         return cameras
     except Exception:
         return []
@@ -148,7 +199,41 @@ class State:
         self.discovered_services = []
         self.connected_devices = []
         self.logs = []
-        self.scrcpy_procs = {}
+        self.scrcpy_sessions = {}  # session_id -> { session_id, device, mode, title, proc, pid, started_at, log_path, log_fp }
+        self.scrcpy_procs = {}     # backwards compat
+
+    def get_active_scrcpy_sessions(self, device=None, mode=None):
+        with self.lock:
+            active = []
+            dead_keys = []
+            for sid, sess in self.scrcpy_sessions.items():
+                proc = sess.get("proc")
+                if proc and proc.poll() is None:
+                    if (not device or sess.get("device") == device) and (not mode or sess.get("mode") == mode):
+                        active.append({
+                            "session_id": sess["session_id"],
+                            "device": sess["device"],
+                            "mode": sess["mode"],
+                            "title": sess.get("title", ""),
+                            "pid": sess.get("pid"),
+                            "started_at": sess.get("started_at", 0)
+                        })
+                else:
+                    dead_keys.append(sid)
+            for k in dead_keys:
+                sess = self.scrcpy_sessions.pop(k, None)
+                if sess:
+                    if sess.get("log_fp"):
+                        try:
+                            sess["log_fp"].close()
+                        except Exception:
+                            pass
+                    if sess.get("log_path") and os.path.exists(sess["log_path"]):
+                        try:
+                            os.remove(sess["log_path"])
+                        except Exception:
+                            pass
+            return active
 
     def broadcast(self, event_type, data):
         msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
@@ -502,13 +587,25 @@ class RequestHandler(SimpleHTTPRequestHandler):
         elif path == "/api/scrcpy/status":
             qs = parse_qs(parsed.query)
             device = qs.get("device", [""])[0]
-            with state.lock:
-                proc = state.scrcpy_procs.get(device)
-                is_running = proc is not None and proc.poll() is None
+            mode = qs.get("mode", [""])[0]
+            scrcpy_path = find_scrcpy()
+            bundled = get_bundled_paths()
+            all_sessions = state.get_active_scrcpy_sessions()
+            device_sessions = [s for s in all_sessions if s["device"] == device] if device else all_sessions
+            is_running = any(s["device"] == device and (not mode or s["mode"] == mode) for s in all_sessions) if device else bool(all_sessions)
+            screen_running = any(s["device"] == device and s["mode"] == "screen" for s in all_sessions) if device else any(s["mode"] == "screen" for s in all_sessions)
+            camera_running = any(s["device"] == device and s["mode"] == "camera" for s in all_sessions) if device else any(s["mode"] == "camera" for s in all_sessions)
+
             self.send_json_response(200, {
-                "installed": shutil.which("scrcpy") is not None,
+                "installed": scrcpy_path is not None,
+                "scrcpy_path": scrcpy_path,
+                "is_bundled": bool(bundled.get("scrcpy") and scrcpy_path == bundled.get("scrcpy")),
                 "running": is_running,
-                "device": device
+                "screen_running": screen_running,
+                "camera_running": camera_running,
+                "device": device,
+                "device_sessions": device_sessions,
+                "sessions": all_sessions
             })
 
         elif path == "/api/scrcpy/cameras":
@@ -889,81 +986,193 @@ class RequestHandler(SimpleHTTPRequestHandler):
             mode = body.get("mode", "screen")
             camera_id = body.get("camera_id")
             camera_facing = body.get("camera_facing")
+            camera_fps = body.get("camera_fps")
+            max_size = body.get("max_size", 1920)
+            max_fps = body.get("max_fps")
             stay_awake = body.get("stay_awake", True)
             turn_off_screen = body.get("turn_off_screen", False)
-            no_audio = body.get("no_audio", False)
+            no_audio = body.get("no_audio", mode == "camera")
 
-            if not shutil.which("scrcpy"):
+            scrcpy_bin = find_scrcpy()
+            server_jar = find_scrcpy_server()
+
+            if not scrcpy_bin:
                 self.send_json_response(400, {
                     "ok": False,
-                    "error": "scrcpy is not installed on this machine. Run: sudo apt install scrcpy"
+                    "error": "scrcpy binary could not be found. Please ensure bin/scrcpy contains the executable."
                 })
                 return
 
             if not device:
-                self.send_json_response(400, {"error": "Device is required"})
+                self.send_json_response(400, {"ok": False, "error": "Device serial or IP:Port is required"})
                 return
 
-            # Terminate any existing scrcpy for this device
+            session_id = (body.get("session_id") or f"{device}:{mode}").strip()
+
+            # Terminate any existing instance of this specific session
             with state.lock:
-                old_proc = state.scrcpy_procs.get(device)
-                if old_proc and old_proc.poll() is None:
-                    try:
-                        old_proc.terminate()
-                        old_proc.wait(timeout=2)
-                    except Exception:
-                        pass
+                old_sess = state.scrcpy_sessions.get(session_id)
+                if old_sess:
+                    old_proc = old_sess.get("proc")
+                    if old_proc and old_proc.poll() is None:
+                        try:
+                            old_proc.terminate()
+                            old_proc.wait(timeout=2)
+                        except Exception:
+                            pass
+                    if old_sess.get("log_fp"):
+                        try:
+                            old_sess["log_fp"].close()
+                        except Exception:
+                            pass
+                    state.scrcpy_sessions.pop(session_id, None)
 
             env = os.environ.copy()
-            if "DISPLAY" not in env:
-                env["DISPLAY"] = ":0"
+            if server_jar:
+                env["SCRCPY_SERVER_PATH"] = server_jar
 
-            cmd = ["scrcpy", "-s", device]
+            if not sys.platform.startswith("win"):
+                if "DISPLAY" not in env and os.path.exists("/tmp/.X11-unix/X0"):
+                    env["DISPLAY"] = ":0"
+                if "XDG_RUNTIME_DIR" not in env:
+                    env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+
+            cmd = [scrcpy_bin, "-s", device]
+
+            # Max size limit (default 1920 prevents 4K hardware encoder crashes on high-res Android devices)
+            try:
+                ms = int(max_size) if max_size else 1920
+                if ms > 0:
+                    cmd.append(f"--max-size={ms}")
+            except Exception:
+                cmd.append("--max-size=1920")
+
+            if max_fps:
+                try:
+                    fps_val = int(max_fps)
+                    if fps_val > 0:
+                        cmd.append(f"--max-fps={fps_val}")
+                except Exception:
+                    pass
+
             if mode == "camera":
-                cmd.extend(["--video-source=camera"])
-                if camera_id is not None and str(camera_id).strip():
-                    cmd.append(f"--camera-id={camera_id}")
+                cmd.append("--video-source=camera")
+                if camera_id is not None and str(camera_id).strip() != "":
+                    cmd.append(f"--camera-id={str(camera_id).strip()}")
                 elif camera_facing in ("front", "back", "external"):
                     cmd.append(f"--camera-facing={camera_facing}")
-                cmd.append(f"--window-title=BeamADB Camera: {device}")
+
+                if camera_fps:
+                    cmd.append(f"--camera-fps={camera_fps}")
+
+                if no_audio:
+                    cmd.append("--no-audio")
+
+                title = f"BeamADB Camera: {device}"
+                cmd.append(f"--window-title={title}")
             else:
-                cmd.append(f"--window-title=BeamADB Mirror: {device}")
+                if stay_awake:
+                    cmd.append("--stay-awake")
+                if turn_off_screen:
+                    cmd.append("--turn-screen-off")
+                if no_audio:
+                    cmd.append("--no-audio")
 
-            if stay_awake:
-                cmd.append("--stay-awake")
-            if turn_off_screen:
-                cmd.append("--turn-screen-off")
-            if no_audio:
-                cmd.append("--no-audio")
+                title = f"BeamADB Mirror: {device}"
+                cmd.append(f"--window-title={title}")
 
+            log_file_path = tempfile.mktemp(prefix=f"beamadb_scrcpy_{mode}_", suffix=".log")
             try:
-                proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                log_fp = open(log_file_path, "w+", encoding="utf-8", errors="replace")
+                proc = subprocess.Popen(cmd, env=env, stdout=log_fp, stderr=subprocess.STDOUT)
+                
+                # Wait briefly to catch immediate crashes (e.g. invalid camera ID, unsupported encoder, bad display)
+                time.sleep(0.7)
+                ret = proc.poll()
+                if ret is not None:
+                    log_fp.seek(0)
+                    err_output = log_fp.read().strip()
+                    log_fp.close()
+                    try:
+                        os.remove(log_file_path)
+                    except Exception:
+                        pass
+                    
+                    err_detail = err_output[-400:] if err_output else f"Process exited with code {ret}"
+                    state.log(f"Failed to start scrcpy ({mode}) for {device}: {err_detail}")
+                    self.send_json_response(500, {
+                        "ok": False,
+                        "error": f"Scrcpy failed to launch ({mode}):\n{err_detail}"
+                    })
+                    return
+
                 with state.lock:
+                    state.scrcpy_sessions[session_id] = {
+                        "session_id": session_id,
+                        "device": device,
+                        "mode": mode,
+                        "title": title,
+                        "proc": proc,
+                        "pid": proc.pid,
+                        "started_at": time.time(),
+                        "log_path": log_file_path,
+                        "log_fp": log_fp
+                    }
                     state.scrcpy_procs[device] = proc
-                state.log(f"Started scrcpy ({mode}) for {device}")
+
+                state.log(f"Started scrcpy ({mode}) for {device} [PID {proc.pid}]")
                 self.send_json_response(200, {
                     "ok": True,
                     "message": f"Launched scrcpy ({mode}) for {device}",
-                    "mode": mode
+                    "session_id": session_id,
+                    "mode": mode,
+                    "device": device
                 })
             except Exception as e:
-                self.send_json_response(500, {"error": f"Failed to launch scrcpy: {e}"})
+                self.send_json_response(500, {"ok": False, "error": f"Failed to launch scrcpy: {e}"})
 
         elif path == "/api/scrcpy/stop":
             device = (body.get("device") or "").strip()
+            session_id = (body.get("session_id") or "").strip()
+            mode = (body.get("mode") or "").strip()
+
+            stopped_count = 0
             with state.lock:
-                proc = state.scrcpy_procs.get(device)
-                if proc and proc.poll() is None:
-                    try:
-                        proc.terminate()
-                        proc.wait(timeout=2)
-                    except Exception:
-                        pass
+                targets_to_stop = []
+                for sid, sess in list(state.scrcpy_sessions.items()):
+                    if session_id and sid == session_id:
+                        targets_to_stop.append((sid, sess))
+                    elif not session_id and device and sess.get("device") == device:
+                        if not mode or sess.get("mode") == mode:
+                            targets_to_stop.append((sid, sess))
+
+                for sid, sess in targets_to_stop:
+                    proc = sess.get("proc")
+                    if proc and proc.poll() is None:
+                        try:
+                            proc.terminate()
+                            proc.wait(timeout=2)
+                        except Exception:
+                            pass
+                    if sess.get("log_fp"):
+                        try:
+                            sess["log_fp"].close()
+                        except Exception:
+                            pass
+                    if sess.get("log_path") and os.path.exists(sess["log_path"]):
+                        try:
+                            os.remove(sess["log_path"])
+                        except Exception:
+                            pass
+                    state.scrcpy_sessions.pop(sid, None)
+                    stopped_count += 1
+
+                if device in state.scrcpy_procs:
                     state.scrcpy_procs.pop(device, None)
-                    state.log(f"Stopped scrcpy for {device}")
-                    self.send_json_response(200, {"ok": True, "message": f"Stopped mirroring for {device}"})
-                else:
-                    self.send_json_response(200, {"ok": True, "message": "Mirroring was not active"})
+
+            msg = f"Stopped {stopped_count} scrcpy session(s)" if stopped_count > 0 else "No active mirroring session found"
+            state.log(msg)
+            self.send_json_response(200, {"ok": True, "message": msg, "stopped_count": stopped_count})
 
         elif path == "/api/files/delete":
             device = (body.get("device") or "").strip()

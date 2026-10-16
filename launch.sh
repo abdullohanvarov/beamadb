@@ -6,7 +6,10 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT=5588
 URL="http://localhost:${PORT}"
 
-# Add adb to PATH if needed
+# Add bundled tools & adb to PATH if needed
+if [ -d "${DIR}/bin/scrcpy/linux" ]; then
+  export PATH="${DIR}/bin/scrcpy/linux:$PATH"
+fi
 if ! command -v adb >/dev/null 2>&1; then
   if [ -f "$HOME/Android/Sdk/platform-tools/adb" ]; then
     export PATH="$HOME/Android/Sdk/platform-tools:$PATH"

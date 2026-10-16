@@ -341,14 +341,11 @@
             <button class="btn-close" id="btnCloseScrcpy" aria-label="Close Scrcpy">&times;</button>
           </div>
           <div class="modal-body">
-            <!-- Mirror Status Banner -->
-            <div id="scrcpyActiveBanner" class="scrcpy-status-banner" style="display: none;">
-              <div class="scrcpy-status-info">
-                <span class="indicator-dot green"></span>
-                <span id="scrcpyStatusText">Mirroring session is active</span>
-              </div>
-              <button id="btnStopScrcpy" class="btn btn-danger btn-sm">Stop Mirroring</button>
-            </div>
+            <!-- Active Sessions List for Device -->
+            <div id="scrcpySessionsContainer" class="scrcpy-sessions-container" style="display: none;"></div>
+
+            <!-- Launch Error Alert -->
+            <div id="scrcpyLaunchError" class="result-banner error" style="display: none; margin-bottom: 16px; white-space: pre-wrap; font-size: 0.85rem;"></div>
 
             <!-- Mode Switcher Tabs -->
             <div class="scrcpy-mode-tabs">
@@ -366,6 +363,27 @@
               <input type="hidden" id="scrcpyTargetDevice" value="">
               <input type="hidden" id="scrcpyMode" value="screen">
 
+              <!-- Common Streaming Options -->
+              <div class="form-row mb-3">
+                <div class="form-group col">
+                  <label for="scrcpyMaxSize" class="form-label">Max Resolution:</label>
+                  <select id="scrcpyMaxSize" class="form-select">
+                    <option value="1920" selected>1080p (Fast & Stable)</option>
+                    <option value="1280">720p (High Performance)</option>
+                    <option value="2560">1440p (2K)</option>
+                    <option value="0">Original / Native Max</option>
+                  </select>
+                </div>
+                <div class="form-group col">
+                  <label for="scrcpyMaxFps" class="form-label">Frame Rate (FPS):</label>
+                  <select id="scrcpyMaxFps" class="form-select">
+                    <option value="60" selected>60 FPS</option>
+                    <option value="30">30 FPS (Power Saver)</option>
+                    <option value="0">Unlimited</option>
+                  </select>
+                </div>
+              </div>
+
               <!-- Screen Mode Options -->
               <div id="scrcpyScreenOptions" class="scrcpy-options-group">
                 <div class="scrcpy-checkbox-grid">
@@ -373,14 +391,14 @@
                     <input type="checkbox" id="scrcpyStayAwake" checked>
                     <div class="check-text">
                       <strong>Stay Awake</strong>
-                      <span>Prevent phone screen from sleeping</span>
+                      <span>Prevent phone screen from sleeping while mirroring</span>
                     </div>
                   </label>
                   <label class="scrcpy-check-card">
                     <input type="checkbox" id="scrcpyTurnOffScreen">
                     <div class="check-text">
-                      <strong>Turn Off Screen</strong>
-                      <span>Blank phone display while mirroring to save power</span>
+                      <strong>Turn Off Physical Screen</strong>
+                      <span>Blank phone display while mirroring to save power & heat</span>
                     </div>
                   </label>
                   <label class="scrcpy-check-card">
@@ -398,22 +416,22 @@
                 <div class="form-group mb-3">
                   <label for="selectScrcpyCamera" class="form-label">Select Device Camera:</label>
                   <select id="selectScrcpyCamera" class="form-select">
-                    <option value="">Detecting cameras...</option>
+                    <option value="">Querying device cameras...</option>
                   </select>
-                  <span class="hint-text mt-1">Mirror your Android device's camera stream directly as a native high-speed video window.</span>
+                  <span class="hint-text mt-1">Streams Android camera as a native desktop video window.</span>
                 </div>
-                <div class="form-row">
+                <div class="form-row mb-3">
                   <div class="form-group col">
                     <label for="selectCameraFacing" class="form-label">Facing Direction:</label>
                     <select id="selectCameraFacing" class="form-select">
-                      <option value="">Auto (Default)</option>
+                      <option value="">Auto Detect</option>
                       <option value="back">Back Camera</option>
                       <option value="front">Front Camera</option>
                       <option value="external">External Camera</option>
                     </select>
                   </div>
                   <div class="form-group col">
-                    <label for="selectCameraFps" class="form-label">Frame Rate (FPS):</label>
+                    <label for="selectCameraFps" class="form-label">Camera FPS:</label>
                     <select id="selectCameraFps" class="form-select">
                       <option value="30" selected>30 FPS</option>
                       <option value="60">60 FPS</option>
@@ -421,13 +439,22 @@
                     </select>
                   </div>
                 </div>
+                <div class="scrcpy-checkbox-grid">
+                  <label class="scrcpy-check-card">
+                    <input type="checkbox" id="scrcpyCameraNoAudio" checked>
+                    <div class="check-text">
+                      <strong>Mute Camera Microphone</strong>
+                      <span>Recommended to prevent audio codec conflicts in camera mode</span>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               <div class="modal-footer-btns">
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalScrcpy').close()">Close</button>
                 <button type="submit" class="btn btn-primary" id="btnLaunchScrcpySubmit">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                  Launch Mirroring
+                  <span id="btnLaunchScrcpyText">Launch Screen Mirror</span>
                 </button>
               </div>
             </form>

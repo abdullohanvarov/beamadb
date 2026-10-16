@@ -48,12 +48,31 @@ sys.path.insert(0, str(APP_DIR))
 PORT = 5588
 URL = f"http://localhost:{PORT}"
 
+def get_bundled_paths():
+    is_win = sys.platform.startswith("win")
+    if is_win:
+        scrcpy_bin = APP_DIR / "bin" / "scrcpy" / "windows" / "scrcpy.exe"
+        server_jar = APP_DIR / "bin" / "scrcpy" / "windows" / "scrcpy-server"
+        adb_bin = APP_DIR / "bin" / "scrcpy" / "windows" / "adb.exe"
+    else:
+        scrcpy_bin = APP_DIR / "bin" / "scrcpy" / "linux" / "scrcpy"
+        server_jar = APP_DIR / "bin" / "scrcpy" / "linux" / "scrcpy-server"
+        adb_bin = APP_DIR / "bin" / "scrcpy" / "linux" / "adb"
+
+    return {
+        "scrcpy": str(scrcpy_bin) if scrcpy_bin.exists() else None,
+        "server": str(server_jar) if server_jar.exists() else None,
+        "adb": str(adb_bin) if adb_bin.exists() else None,
+    }
+
 def get_adb():
+    bundled = get_bundled_paths()
     candidates = [
         os.environ.get("ADB_PATH"),
+        bundled.get("adb"),
         "/home/abdulloh/.local/bin/adb",
         "/home/abdulloh/Android/Sdk/platform-tools/adb",
-        "adb"
+        "adb.exe" if sys.platform.startswith("win") else "adb"
     ]
     for c in candidates:
         if not c:
@@ -64,9 +83,24 @@ def get_adb():
                 return c
         except Exception:
             continue
-    return "adb"
+    return bundled.get("adb") or ("adb.exe" if sys.platform.startswith("win") else "adb")
 
 ADB_BIN = get_adb()
+
+def get_scrcpy():
+    bundled = get_bundled_paths()
+    if bundled.get("scrcpy"):
+        return bundled["scrcpy"]
+    return shutil.which("scrcpy.exe" if sys.platform.startswith("win") else "scrcpy")
+
+def get_scrcpy_server():
+    bundled = get_bundled_paths()
+    if bundled.get("server"):
+        return bundled["server"]
+    for p in ["/usr/share/scrcpy/scrcpy-server", "/usr/local/share/scrcpy/scrcpy-server"]:
+        if os.path.exists(p):
+            return p
+    return None
 
 def run_adb(args, timeout=10):
     cmd = [ADB_BIN] + [str(a) for a in args]
@@ -351,8 +385,10 @@ def get_first_connected_device():
     return devs[0].get("serial")
 
 def cmd_scrcpy(args):
-    if not shutil.which("scrcpy"):
-        print(f"{Colors.RED}[!] scrcpy is not installed. Install with: sudo apt install scrcpy{Colors.RESET}")
+    scrcpy_bin = get_scrcpy()
+    server_jar = get_scrcpy_server()
+    if not scrcpy_bin:
+        print(f"{Colors.RED}[!] scrcpy executable not found.{Colors.RESET}")
         return
 
     device = args[0] if args and not args[0].startswith("-") else get_first_connected_device()
@@ -361,13 +397,18 @@ def cmd_scrcpy(args):
         return
 
     extra_args = [a for a in args if a != device]
-    cmd = ["scrcpy", "-s", device, f"--window-title=BeamADB: {device}"] + extra_args
+    cmd = [scrcpy_bin, "-s", device, "--max-size=1920", f"--window-title=BeamADB: {device}"] + extra_args
+    env = os.environ.copy()
+    if server_jar:
+        env["SCRCPY_SERVER_PATH"] = server_jar
     print(f"[*] Launching scrcpy for {device}...")
-    subprocess.run(cmd)
+    subprocess.run(cmd, env=env)
 
 def cmd_camera(args):
-    if not shutil.which("scrcpy"):
-        print(f"{Colors.RED}[!] scrcpy is not installed. Install with: sudo apt install scrcpy{Colors.RESET}")
+    scrcpy_bin = get_scrcpy()
+    server_jar = get_scrcpy_server()
+    if not scrcpy_bin:
+        print(f"{Colors.RED}[!] scrcpy executable not found.{Colors.RESET}")
         return
 
     device = args[0] if args and not args[0].startswith("-") else get_first_connected_device()
@@ -376,9 +417,12 @@ def cmd_camera(args):
         return
 
     extra_args = [a for a in args if a != device]
-    cmd = ["scrcpy", "-s", device, "--video-source=camera", f"--window-title=BeamADB Camera: {device}"] + extra_args
+    cmd = [scrcpy_bin, "-s", device, "--video-source=camera", "--max-size=1920", "--no-audio", f"--window-title=BeamADB Camera: {device}"] + extra_args
+    env = os.environ.copy()
+    if server_jar:
+        env["SCRCPY_SERVER_PATH"] = server_jar
     print(f"[*] Launching scrcpy camera mode for {device}...")
-    subprocess.run(cmd)
+    subprocess.run(cmd, env=env)
 
 def cmd_pull(args):
     if len(args) < 2:
