@@ -32,28 +32,72 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
 
+# Enable unbuffered UTF-8 output and VT100 colors in terminals
+try:
+    if sys.platform.startswith("win"):
+        os.system('')  # Enable VT100 / ANSI escape processing in Windows console
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 # Configuration
 PORT = int(os.environ.get("PORT", 5588))
 HOST = "0.0.0.0"
-STATIC_DIR = Path(__file__).parent / "static"
+
+# Static directory resolution
+if getattr(sys, "frozen", False):
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass and (Path(meipass) / "static").exists():
+        STATIC_DIR = Path(meipass) / "static"
+    else:
+        STATIC_DIR = Path(sys.executable).resolve().parent / "static"
+else:
+    STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+if not STATIC_DIR.exists() and Path("/usr/share/beamadb/static").exists():
+    STATIC_DIR = Path("/usr/share/beamadb/static")
 
 # Bundled & Cross-platform Binary Resolution
 def get_bundled_paths():
-    base_dir = Path(__file__).resolve().parent
-    is_win = sys.platform.startswith("win")
-    if is_win:
-        scrcpy_bin = base_dir / "bin" / "scrcpy" / "windows" / "scrcpy.exe"
-        server_jar = base_dir / "bin" / "scrcpy" / "windows" / "scrcpy-server"
-        adb_bin = base_dir / "bin" / "scrcpy" / "windows" / "adb.exe"
+    dirs_to_check = []
+    if getattr(sys, "frozen", False):
+        dirs_to_check.append(Path(sys.executable).resolve().parent)
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            dirs_to_check.append(Path(meipass))
     else:
-        scrcpy_bin = base_dir / "bin" / "scrcpy" / "linux" / "scrcpy"
-        server_jar = base_dir / "bin" / "scrcpy" / "linux" / "scrcpy-server"
-        adb_bin = base_dir / "bin" / "scrcpy" / "linux" / "adb"
+        dirs_to_check.append(Path(__file__).resolve().parent)
+
+    if Path("/usr/share/beamadb").exists():
+        dirs_to_check.append(Path("/usr/share/beamadb"))
+
+    is_win = sys.platform.startswith("win")
+    scrcpy_bin = None
+    server_jar = None
+    adb_bin = None
+
+    for d in dirs_to_check:
+        if is_win:
+            s = d / "bin" / "scrcpy" / "windows" / "scrcpy.exe"
+            j = d / "bin" / "scrcpy" / "windows" / "scrcpy-server"
+            a = d / "bin" / "scrcpy" / "windows" / "adb.exe"
+        else:
+            s = d / "bin" / "scrcpy" / "linux" / "scrcpy"
+            j = d / "bin" / "scrcpy" / "linux" / "scrcpy-server"
+            a = d / "bin" / "scrcpy" / "linux" / "adb"
+
+        if s.exists() and not scrcpy_bin:
+            scrcpy_bin = s
+        if j.exists() and not server_jar:
+            server_jar = j
+        if a.exists() and not adb_bin:
+            adb_bin = a
 
     return {
-        "scrcpy": str(scrcpy_bin) if scrcpy_bin.exists() else None,
-        "server": str(server_jar) if server_jar.exists() else None,
-        "adb": str(adb_bin) if adb_bin.exists() else None,
+        "scrcpy": str(scrcpy_bin) if scrcpy_bin else None,
+        "server": str(server_jar) if server_jar else None,
+        "adb": str(adb_bin) if adb_bin else None,
     }
 
 # Find ADB binary
@@ -62,9 +106,10 @@ def find_adb():
     candidates = [
         os.environ.get("ADB_PATH"),
         bundled.get("adb"),
+        shutil.which("adb.exe" if sys.platform.startswith("win") else "adb"),
+        "C:\Apps\platform-tools\adb.exe",
         "/home/abdulloh/.local/bin/adb",
         "/home/abdulloh/Android/Sdk/platform-tools/adb",
-        "adb.exe" if sys.platform.startswith("win") else "adb"
     ]
     for c in candidates:
         if not c:

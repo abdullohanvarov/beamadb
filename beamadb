@@ -26,19 +26,33 @@ import re
 import uuid
 import random
 import signal
+import shutil
+import webbrowser
 from pathlib import Path
 
-# Ensure unbuffered output in terminals and pipes
+# Enable unbuffered UTF-8 output and VT100 colors in terminals
 try:
-    sys.stdout.reconfigure(line_buffering=True)
+    if sys.platform.startswith("win"):
+        os.system('')  # Enable VT100 / ANSI escape processing in Windows console
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-# Resolve directory of BeamADB
-BASE_DIR = Path(__file__).resolve().parent
-# If installed in /usr/bin, package data is in /usr/share/beamadb
+# Resolve directory of BeamADB (source, frozen binary, or Linux /usr/share)
+if getattr(sys, "frozen", False):
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass and (Path(meipass) / "static").exists():
+        BASE_DIR = Path(meipass)
+    else:
+        BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
 if not (BASE_DIR / "server.py").exists() and Path("/usr/share/beamadb/server.py").exists():
     APP_DIR = Path("/usr/share/beamadb")
+elif getattr(sys, "frozen", False) and not (BASE_DIR / "bin").exists() and (Path(sys.executable).resolve().parent / "bin").exists():
+    APP_DIR = Path(sys.executable).resolve().parent
 else:
     APP_DIR = BASE_DIR
 
@@ -50,19 +64,35 @@ URL = f"http://localhost:{PORT}"
 
 def get_bundled_paths():
     is_win = sys.platform.startswith("win")
-    if is_win:
-        scrcpy_bin = APP_DIR / "bin" / "scrcpy" / "windows" / "scrcpy.exe"
-        server_jar = APP_DIR / "bin" / "scrcpy" / "windows" / "scrcpy-server"
-        adb_bin = APP_DIR / "bin" / "scrcpy" / "windows" / "adb.exe"
-    else:
-        scrcpy_bin = APP_DIR / "bin" / "scrcpy" / "linux" / "scrcpy"
-        server_jar = APP_DIR / "bin" / "scrcpy" / "linux" / "scrcpy-server"
-        adb_bin = APP_DIR / "bin" / "scrcpy" / "linux" / "adb"
+    dirs_to_check = [APP_DIR]
+    if getattr(sys, "frozen", False):
+        dirs_to_check.append(Path(sys.executable).resolve().parent)
+
+    scrcpy_bin = None
+    server_jar = None
+    adb_bin = None
+
+    for d in dirs_to_check:
+        if is_win:
+            s = d / "bin" / "scrcpy" / "windows" / "scrcpy.exe"
+            j = d / "bin" / "scrcpy" / "windows" / "scrcpy-server"
+            a = d / "bin" / "scrcpy" / "windows" / "adb.exe"
+        else:
+            s = d / "bin" / "scrcpy" / "linux" / "scrcpy"
+            j = d / "bin" / "scrcpy" / "linux" / "scrcpy-server"
+            a = d / "bin" / "scrcpy" / "linux" / "adb"
+
+        if s.exists() and not scrcpy_bin:
+            scrcpy_bin = s
+        if j.exists() and not server_jar:
+            server_jar = j
+        if a.exists() and not adb_bin:
+            adb_bin = a
 
     return {
-        "scrcpy": str(scrcpy_bin) if scrcpy_bin.exists() else None,
-        "server": str(server_jar) if server_jar.exists() else None,
-        "adb": str(adb_bin) if adb_bin.exists() else None,
+        "scrcpy": str(scrcpy_bin) if scrcpy_bin else None,
+        "server": str(server_jar) if server_jar else None,
+        "adb": str(adb_bin) if adb_bin else None,
     }
 
 def get_adb():
@@ -70,9 +100,10 @@ def get_adb():
     candidates = [
         os.environ.get("ADB_PATH"),
         bundled.get("adb"),
+        shutil.which("adb.exe" if sys.platform.startswith("win") else "adb"),
+        "C:\\Apps\\platform-tools\\adb.exe",
         "/home/abdulloh/.local/bin/adb",
         "/home/abdulloh/Android/Sdk/platform-tools/adb",
-        "adb.exe" if sys.platform.startswith("win") else "adb"
     ]
     for c in candidates:
         if not c:
@@ -379,10 +410,15 @@ def cmd_usb():
     print(f"{Colors.GREEN}{Colors.BOLD}[✓] Switched to wireless mode ({target})! You can now unplug the USB cable. 🎉{Colors.RESET}")
 
 def get_first_connected_device():
-    devs = get_connected_devices()
-    if not devs:
-        return None
-    return devs[0].get("serial")
+    _, out, _ = run_adb(["devices"])
+    for line in out.splitlines()[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = re.split(r'\s+', line)
+        if len(parts) >= 2 and parts[1] == "device":
+            return parts[0]
+    return None
 
 def cmd_scrcpy(args):
     scrcpy_bin = get_scrcpy()
@@ -478,14 +514,34 @@ def start_server_daemon():
     if is_server_running():
         return True
     
-    server_script = APP_DIR / "server.py"
-    log_file = APP_DIR / "server.log"
-    subprocess.Popen(
-        [sys.executable, "-u", str(server_script)],
-        stdout=open(log_file, "a"),
-        stderr=subprocess.STDOUT,
-        preexec_fn=os.setpgrp
-    )
+    log_dir = Path.home() / ".beamadb"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "server.log"
+    except Exception:
+        log_file = APP_DIR / "server.log"
+        
+    log_fp = open(log_file, "a", encoding="utf-8", errors="replace")
+
+    popen_kwargs = {
+        "stdout": log_fp,
+        "stderr": subprocess.STDOUT,
+    }
+
+    if sys.platform.startswith("win"):
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        popen_kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["preexec_fn"] = os.setpgrp
+
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "__server__"]
+    else:
+        server_script = APP_DIR / "server.py"
+        cmd = [sys.executable, "-u", str(server_script)]
+
+    subprocess.Popen(cmd, **popen_kwargs)
     for _ in range(25):
         if is_server_running():
             return True
@@ -497,16 +553,9 @@ def cmd_ui():
     if not is_server_running():
         start_server_daemon()
     
-    # Open browser
+    # Open browser cross-platform
     try:
-        if subprocess.run(["which", "xdg-open"], stdout=subprocess.DEVNULL).returncode == 0:
-            subprocess.Popen(["xdg-open", URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif subprocess.run(["which", "firefox"], stdout=subprocess.DEVNULL).returncode == 0:
-            subprocess.Popen(["firefox", URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif subprocess.run(["which", "google-chrome"], stdout=subprocess.DEVNULL).returncode == 0:
-            subprocess.Popen(["google-chrome", URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            print(f"Please open {URL} in your browser.")
+        webbrowser.open(URL)
     except Exception:
         print(f"Please open {URL} in your browser.")
 
@@ -535,6 +584,7 @@ Commands:
   push <device> <local> <remote>
                         Upload/push a file or directory to device
   rm <device> <remote>  Delete a file or directory on device
+  server                Run background HTTP server directly
   restart               Restart ADB server daemon
   status                Show server status and active ports
   help, --help, -h      Display this documentation
@@ -547,7 +597,11 @@ def main():
         return
 
     cmd = args[0].lower()
-    if cmd in ("ui", "gui", "start", "web"):
+    if cmd in ("__server__", "server-daemon", "server"):
+        import server
+        server.main()
+        return
+    elif cmd in ("ui", "gui", "start", "web"):
         cmd_ui()
     elif cmd in ("pair", "qr"):
         cmd_pair_cli()
