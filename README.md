@@ -21,16 +21,16 @@ Works seamlessly both as an **accessible modern Web GUI** and as an **instant, z
 
 ## 📥 Download Options & Releases
 
-Choose the best download option for your operating system:
+👉 **[Download the Latest Releases on GitHub](https://github.com/abdullohanvarov/beamadb/releases)**
 
 | Platform | Format | Package | Notes |
 | :--- | :--- | :--- | :--- |
 | **Windows 10 / 11** | **EXE Installer** *(Recommended)* | [**BeamADB-1.0.0-Setup.exe**](https://github.com/abdullohanvarov/beamadb/releases/download/v1.0.0/BeamADB-1.0.0-Setup.exe) | Self-contained 1-click installer. Creates Desktop & Start Menu shortcuts, adds `beamadb` to PATH, bundles ADB & Scrcpy. Zero Python required! |
 | **Windows 10 / 11** | **Portable ZIP** | [**BeamADB-1.0.0-win64-portable.zip**](https://github.com/abdullohanvarov/beamadb/releases/download/v1.0.0/BeamADB-1.0.0-win64-portable.zip) | Standalone portable bundle. Extract and double-click `launch.bat` or run `beamadb.exe`. No installation required. |
 | **Ubuntu / Debian / Mint** | **Debian (.deb)** | [**beamadb_1.0.0_all.deb**](https://github.com/abdullohanvarov/beamadb/releases/download/v1.0.0/beamadb_1.0.0_all.deb) | Native Linux package. Installs `/usr/bin/beamadb`, desktop application shortcut, and icon. |
-| **All Platforms** | **Source Code (.zip / .tar.gz)** | [**Latest Source Release**](https://github.com/abdullohanvarov/beamadb/releases) | Run directly via Python 3 with `launch.bat` (Windows) or `./beamadb` (Linux). |
+| **All Platforms** | **Source Code (.zip / .tar.gz)** | [**Source Code Archive**](https://github.com/abdullohanvarov/beamadb/releases) | Run directly via Python 3 with `launch.bat` (Windows) or `./beamadb` (Linux). |
 
-*(Pre-compiled binaries are generated directly into the [`dist/`](dist/) folder when building locally).*
+*(Note: Direct download URLs become active as soon as you publish the `v1.0.0` release tag on GitHub Releases).*
 
 ---
 
