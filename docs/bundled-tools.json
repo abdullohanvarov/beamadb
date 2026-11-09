@@ -1,0 +1,121 @@
+{
+  "linux_scrcpy_version": "5.0.1",
+  "note": "Keep each platform client, server and dependencies together. Windows version requires verification on Windows.",
+  "files": [
+    {
+      "path": "bin/scrcpy/linux/LICENSE",
+      "sha256": "01c12035bf35af37241298dc7ad538eb2a07e5c940437bc6876feeaa9d1951d0",
+      "bytes": 11387
+    },
+    {
+      "path": "bin/scrcpy/linux/scrcpy.1",
+      "sha256": "dde24c3970c8ce81cc37a291730bbf97141a45ba2f0d57aa229b01ad5b60efb6",
+      "bytes": 25670
+    },
+    {
+      "path": "bin/scrcpy/linux/disconnected.png",
+      "sha256": "e394873cd3e2cc3ab0cca6212b10ed2a8a0fad11a05675c8a9fa6f26f3ae12c0",
+      "bytes": 4703
+    },
+    {
+      "path": "bin/scrcpy/linux/scrcpy",
+      "sha256": "21d7e9b10bf9eae86b4d3070a5beff13eaaba33e4e6d1e25575ca3e2473228b7",
+      "bytes": 34305128
+    },
+    {
+      "path": "bin/scrcpy/linux/adb",
+      "sha256": "a902be8f45c6c62e76c9efaf6947a0fa747c9cabd89a2ac8e0d16ecb30b3ed01",
+      "bytes": 10642368
+    },
+    {
+      "path": "bin/scrcpy/linux/scrcpy-server",
+      "sha256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536",
+      "bytes": 733930
+    },
+    {
+      "path": "bin/scrcpy/linux/scrcpy.png",
+      "sha256": "8e8ca237898faa16014cdd118396af53405b423f3db0508c50cc3edce08eb313",
+      "bytes": 6530
+    },
+    {
+      "path": "bin/scrcpy/windows/swresample-7.dll",
+      "sha256": "7b57e891bf09c43422d79f98cf9d1830c4b1d48a251423ce5fb8c2048eb8fc1e",
+      "bytes": 139776
+    },
+    {
+      "path": "bin/scrcpy/windows/scrcpy-noconsole.vbs",
+      "sha256": "3ccda94c161f18cef07c50d4d3c4913eb883d4b0fe3b939c35fae52784fb1d2b",
+      "bytes": 212
+    },
+    {
+      "path": "bin/scrcpy/windows/avformat-63.dll",
+      "sha256": "4dbb0c1c8262f7ae45e7edc4866e26f53b358bf4fc7a0b971f15d1f2d7baf22f",
+      "bytes": 743424
+    },
+    {
+      "path": "bin/scrcpy/windows/adb.exe",
+      "sha256": "b4a6b455702684652cccf7b46258b29e653538904359a58fd4931cf3ef286b3f",
+      "bytes": 8273560
+    },
+    {
+      "path": "bin/scrcpy/windows/avutil-61.dll",
+      "sha256": "52eb504ced0ea6d9e936d348df51c8aaeec1cae8fa4a7dba339fea87d7cce725",
+      "bytes": 1047552
+    },
+    {
+      "path": "bin/scrcpy/windows/SDL3.dll",
+      "sha256": "288aaf5b4f246bd84c276351867e3132cfcd9b0a9d25fb679c8d94b30cdf333e",
+      "bytes": 5384859
+    },
+    {
+      "path": "bin/scrcpy/windows/scrcpy.exe",
+      "sha256": "64bcee493d9243dab1e84093928014348738e31f3225e67558210e6b6cfb9cd6",
+      "bytes": 766717
+    },
+    {
+      "path": "bin/scrcpy/windows/disconnected.png",
+      "sha256": "e394873cd3e2cc3ab0cca6212b10ed2a8a0fad11a05675c8a9fa6f26f3ae12c0",
+      "bytes": 4703
+    },
+    {
+      "path": "bin/scrcpy/windows/open_a_terminal_here.bat",
+      "sha256": "843758795a84d0d035a7d277ad29cc1ff1702048b4b61ae74b9e3439ae683423",
+      "bytes": 5
+    },
+    {
+      "path": "bin/scrcpy/windows/avcodec-63.dll",
+      "sha256": "159928e3bbe7beaca046ccf831fdf44f1e5559c0e63417f007889a6bb2c5de88",
+      "bytes": 8685568
+    },
+    {
+      "path": "bin/scrcpy/windows/AdbWinApi.dll",
+      "sha256": "c1d653030b4bde65d3e07e4d0b0979e17be56df1436cdd15528630f27808050d",
+      "bytes": 108184
+    },
+    {
+      "path": "bin/scrcpy/windows/AdbWinUsbApi.dll",
+      "sha256": "0710e894d9b40f71a670c13c694079d564c92c1279da382cfe4850983aaebe1b",
+      "bytes": 73368
+    },
+    {
+      "path": "bin/scrcpy/windows/scrcpy-server",
+      "sha256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536",
+      "bytes": 733930
+    },
+    {
+      "path": "bin/scrcpy/windows/LICENSE.txt",
+      "sha256": "01c12035bf35af37241298dc7ad538eb2a07e5c940437bc6876feeaa9d1951d0",
+      "bytes": 11387
+    },
+    {
+      "path": "bin/scrcpy/windows/scrcpy.png",
+      "sha256": "8e8ca237898faa16014cdd118396af53405b423f3db0508c50cc3edce08eb313",
+      "bytes": 6530
+    },
+    {
+      "path": "bin/scrcpy/windows/libusb-1.0.dll",
+      "sha256": "0c82e969c046d816507a2fe1e57253a334cb203bd6ea223194ad17c007154f32",
+      "bytes": 227005
+    }
+  ]
+}

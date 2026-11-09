@@ -1,258 +1,184 @@
-# BeamADB ⚡📱
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platform: Linux & Windows](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-blue.svg)](https://github.com/abdullohanvarov/beamadb)
-[![Python: 3.8+](https://img.shields.io/badge/Python-3.8+-brightgreen.svg)](https://www.python.org)
-[![Android: 11+](https://img.shields.io/badge/Android-11+%20(Wireless%20Debugging)-orange.svg)](https://developer.android.com/tools/adb#wireless)
-[![Zero Dependency](https://img.shields.io/badge/Dependencies-Zero%20pip%2Fnpm-success.svg)](https://github.com/abdullohanvarov/beamadb)
-[![Windows Installer](https://img.shields.io/badge/Windows-Setup.exe-brightgreen.svg)](https://github.com/abdullohanvarov/beamadb/releases)
-
-> **Fast, accessible Android Wireless Debugging & QR Pairing Bridge for Windows and Linux.**
-
-BeamADB lets developers pair, connect, and debug Android devices over Wi-Fi without needing Android Studio or struggling with dynamic IP addresses, randomized pairing ports, and cumbersome typing.
-
-Works seamlessly both as an **accessible modern Web GUI** and as an **instant, zero-dependency Terminal CLI**.
-
 <p align="center">
-  <img src="static/icon.svg" alt="BeamADB Logo" width="128" height="128">
+  <img src="static/icon.svg" width="88" height="88" alt="BeamADB logo">
 </p>
 
----
+<h1 align="center">BeamADB</h1>
 
-## 📥 Download Options & Releases
+<p align="center">
+  <strong>Your Android phone. A bigger workspace.</strong><br>
+  A standalone desktop companion for everyday phone access and professional Android development.
+</p>
 
-👉 **[Download the Latest Releases on GitHub](https://github.com/abdullohanvarov/beamadb/releases)**
+<p align="center">
+  <a href="#platform-status"><img src="https://img.shields.io/badge/Linux-desktop_preview-356af0" alt="Linux desktop preview"></a>
+  <a href="#platform-status"><img src="https://img.shields.io/badge/Windows-validation_pending-64748b" alt="Windows validation pending"></a>
+  <a href="desktop/pubspec.yaml"><img src="https://img.shields.io/badge/Built_with-Flutter-02569B?logo=flutter" alt="Built with Flutter"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/App_source-MIT-29977e" alt="Application source licensed under MIT"></a>
+</p>
 
-| Platform | Format | Package | Notes |
-| :--- | :--- | :--- | :--- |
-| **Windows 10 / 11** | **EXE Installer** *(Recommended)* | [**BeamADB-1.0.0-Setup.exe**](https://github.com/abdullohanvarov/beamadb/releases/download/v1.0.0/BeamADB-1.0.0-Setup.exe) | Self-contained 1-click installer. Creates Desktop & Start Menu shortcuts, adds `beamadb` to PATH, bundles ADB & Scrcpy. Zero Python required! |
-| **Windows 10 / 11** | **Portable ZIP** | [**BeamADB-1.0.0-win64-portable.zip**](https://github.com/abdullohanvarov/beamadb/releases/download/v1.0.0/BeamADB-1.0.0-win64-portable.zip) | Standalone portable bundle. Extract and double-click `launch.bat` or run `beamadb.exe`. No installation required. |
-| **Ubuntu / Debian / Mint** | **Debian (.deb)** | [**beamadb_1.0.0_all.deb**](https://github.com/abdullohanvarov/beamadb/releases/download/v1.0.0/beamadb_1.0.0_all.deb) | Native Linux package. Installs `/usr/bin/beamadb`, desktop application shortcut, and icon. |
-| **All Platforms** | **Source Code (.zip / .tar.gz)** | [**Source Code Archive**](https://github.com/abdullohanvarov/beamadb/releases) | Run directly via Python 3 with `launch.bat` (Windows) or `./beamadb` (Linux). |
+<p align="center">
+  <a href="#get-started">Get started</a> ·
+  <a href="#your-phone-within-reach">Features</a> ·
+  <a href="#a-workspace-for-engineers-too">Developer tools</a> ·
+  <a href="docs/DESKTOP_STATUS.md">Roadmap & status</a>
+</p>
 
-*(Note: Direct download URLs become active as soon as you publish the `v1.0.0` release tag on GitHub Releases).*
+<p align="center">
+  <img src="docs/previews/desktop-overview.png" width="1200" alt="BeamADB desktop overview with shortcuts for screen mirroring, files, camera and audio, alongside developer tools">
+  <br><sub>Linux desktop preview · Light appearance · No device connected</sub>
+</p>
 
----
+## Your phone, within reach
 
-## ✨ Highlights & Features
+BeamADB brings phone access into a native Flutter desktop window. Start with the things you use most—your screen, files, camera and audio—then open the engineering workspace when you need more control.
 
-- **📷 QR Code Pairing (Android 11+ AOSP)**:
-  - Generates a real-time scannable QR code matching Android's Wireless Debugging schema (`WIFI:T:ADB;S:...;P:...;;`).
-  - **In Web GUI**: Animated QR display with radar scan-line and auto-detecting connection loop.
-  - **Directly in Terminal**: Crisp UTF-8 half-block QR rendered right inside your shell (`beamadb pair`).
-  - Automatically listens for phone broadcast over Wi-Fi, completes TLS security exchange (`adb pair`), discovers the connection port, and connects (`adb connect`).
-- **🔢 6-Digit Code Pairing**:
-  - Full manual pairing with IP, pairing port, and 6-digit code.
-  - 1-click auto-fill from discovered local network endpoints.
-- **🌐 Local Network mDNS Auto-Discovery**:
-  - Automatically queries local network for `_adb-tls-pairing._tcp` and `_adb-tls-connect._tcp` services.
-  - Shows phone model name and advertised pairing/connect ports in real time.
-- **📱 Real-time Screen & Camera Mirroring (Bundled Scrcpy - Windows & Linux)**:
-  - **Self-Contained & Bundled**: Comes bundled with standalone Scrcpy binaries and server for both **Windows** (`bin/scrcpy/windows/`) and **Linux** (`bin/scrcpy/linux/`). Zero manual installation required!
-  - **Multi-Device & Multi-Stream**: Mirror screens and stream cameras of multiple connected Android devices simultaneously in separate windows.
-  - **Live Camera Mirroring**: Stream your phone's camera (front, back, or external) directly as a high-speed video monitor (Android 12+).
-  - Configurable options: Adjustable resolution (1080p, 720p, 1440p, or Native), selectable frame rate (60/30 FPS), stay awake, blank device screen, and audio muting.
-- **📁 Full Device File Explorer**:
-  - Browse, navigate, and manage device storage (`/sdcard`, `Downloads`, `DCIM`, `Documents`, etc.) with interactive breadcrumbs.
-  - **Upload Files & Folders**: Single/multi-file upload, whole directory upload, and seamless drag-and-drop right onto the explorer table.
-  - **Download Files & Folders**: 1-click file download or automatic zipped directory download.
-  - **File Operations**: Create new directories, delete files/folders permanently, and rename files.
-  - **Real-time Search**: Instant client-side filtering by name.
-  - **Storage Gauge**: Live indicator showing total, used, and free storage space.
-- **🔌 1-Click USB to Wireless Migration**:
-  - Phone plugged in via USB? Run `beamadb usb` or click **"Switch to Wireless"** to enable `tcpip 5555`, fetch the phone's Wi-Fi IP address, connect wirelessly, and safely unplug the cable.
-- **📱 Active Device Management**:
-  - Live inspection: Device model, Android OS version, battery percentage, Wi-Fi IP, and connection state.
-  - **Live Screenshot Preview**: Capture and download instant device screenshots directly from the UI.
-  - **Interactive Shell Drawer**: Run shell commands directly from the UI or terminal.
-  - **1-Click ADB Server Restart**: Recover quickly from stale ADB states.
-- **♿ Accessible by Design**:
-  - Keyboard navigation shortcuts (`Alt+1` QR tab, `Alt+2` Manual tab, `Alt+3` Discovered tab, `Alt+R` Refresh, `Alt+S` Restart ADB).
-  - High contrast colors, dark glassmorphism styling, screen reader announcements (`aria-live`), and auditory feedback tones.
-- **🪶 Zero Heavy Dependencies**:
-  - Standalone daemon using standard libraries (`http.server`, `subprocess`, `ssl`, `socket`).
-  - Embedded lightweight pure-Python QR generator with zero external pip or npm runtime requirements.
+| Workspace | What you can do |
+| --- | --- |
+| **Screen** | Mirror and control your phone inside the app, capture screenshots, record, use fullscreen, or open a separate window. |
+| **Files** | Browse storage, transfer files and folders, drag and drop uploads, preview images and text, rename, copy, move and delete. |
+| **Camera** | Preview the phone camera inside the app, choose a facing direction, capture frames and record. |
+| **Audio** | Start phone-playback or microphone monitoring explicitly, mute playback and record supported streams. |
+| **Apps** | Install APKs and split APK sets, launch or stop apps, inspect packages, export APK files and manage user apps. |
+| **Connections** | Use USB, QR pairing, a six-digit code, direct wireless connection or USB-to-wireless migration. |
 
----
+Light, dark and system themes, keyboard focus, reduced-motion preferences and persistent error details are included. The desktop app runs locally, requires no account, and does not start the legacy HTTP control server.
 
-## 🚀 Installation & Getting Started
+> **Preview status:** These capabilities are implemented, but real-phone validation is still pending. Native video, audio, recording and control transport have been tested with synthetic streams. Android version, device hardware and app restrictions affect what is available. See the [verification details and remaining work](docs/DESKTOP_STATUS.md).
 
-### 🪟 Windows (10 / 11)
+## A workspace for engineers, too
 
-#### Option 1: Windows Installer (.exe) — Recommended
-1. Download [**`BeamADB-1.0.0-Setup.exe`**](https://github.com/abdullohanvarov/beamadb/releases) from the Releases page or build it locally.
-2. Run the installer.
-3. Options included during setup:
-   - Create Desktop shortcut
-   - Add BeamADB to user `PATH` (enables running `beamadb` CLI directly in PowerShell / Command Prompt)
-4. Launch **BeamADB** from your Start Menu or Desktop!
+Developer Tools stays accessible without filling everyday screens with technical controls.
 
-#### Option 2: Portable ZIP
-1. Download [**`BeamADB-1.0.0-win64-portable.zip`**](https://github.com/abdullohanvarov/beamadb/releases).
-2. Extract the archive to any folder.
-3. Double-click `launch.bat` (or run `beamadb.exe`) to launch immediately.
+- **Live logs:** bounded Logcat capture, severity and text filters, pause display, and export.
+- **Shell:** cancellable commands, command history, output and failure details.
+- **Diagnostics:** device properties, battery, memory, storage, bug reports and Perfetto trace capture.
+- **Networking:** inspect and manage ADB forward/reverse port mappings.
+- **App testing:** deep links, runtime permission actions, memory/rendering diagnostics and instrumentation tests.
+- **Workflows:** save, review and run sequential Android shell commands, stopping on the first failure.
 
-#### Option 3: Run from Source on Windows
-If you have Python 3.8+ installed:
-```powershell
-# Clone the repository
-git clone https://github.com/abdullohanvarov/beamadb.git
-cd beamadb
+Operations include timeouts and cancellation where supported. Failures remain visible with details in Activity. The current shell is a command runner; saved workflows are reviewed shell sequences, rather than a full automation framework.
 
-# Double click launch.bat or run:
-.\launch.bat
+## Platform status
 
-# Or run the CLI directly:
-.\beamadb.bat help
-```
+| Target | Current status |
+| --- | --- |
+| **Linux x86-64** | Release bundle and `.deb` preview built on Ubuntu 26.04; native startup and automated tests passed. |
+| **Windows** | Flutter runner and platform dependencies included; build and runtime validation pending. |
+| **Other Linux distributions / architectures** | Not yet validated. Build against your target distribution; the bundled Linux ADB tools currently require x86-64. |
 
----
+Wireless debugging pairing requires **Android 11+**. Camera capture requires **Android 12+**. USB debugging must be enabled and authorized for USB access. Audio capture and protected content depend on Android and individual apps. Camera preview does not create a system virtual webcam.
 
-### 🐧 Linux (Ubuntu / Debian / Fedora / Arch)
+Separate-window mode currently restarts the selected stream in another native app window. Seamless detach/reattach is on the [roadmap](docs/DESKTOP_STATUS.md#remaining-work-from-the-broader-product-plan).
 
-#### Prerequisites (Linux)
-Ensure `adb` is installed:
-- **Ubuntu / Debian / Mint**: `sudo apt install -y android-tools-adb avahi-utils`
-- **Fedora / RHEL**: `sudo dnf install -y android-tools avahi-tools`
-- **Arch / Manjaro**: `sudo pacman -S android-tools avahi`
+## Get started
 
-#### Option 1: Debian (.deb) Package
-```bash
-# Download or build the .deb package:
-sudo apt install ./dist/beamadb_1.0.0_all.deb
-# or
-sudo dpkg -i dist/beamadb_1.0.0_all.deb
-```
+### Build the Linux desktop app
 
-This installs:
-- The `beamadb` CLI command in `/usr/bin/beamadb`
-- The desktop shortcut in your application launcher menu
-- High-resolution SVG application icon
+You need [Flutter with Linux desktop tooling](https://docs.flutter.dev/platform-integration/desktop), GTK 3, and libmpv development libraries. The current preview was built with Flutter 3.47.7 on Ubuntu 26.04 x86-64; the Dart SDK minimum is recorded in [`pubspec.yaml`](desktop/pubspec.yaml).
 
-To uninstall:
-```bash
-sudo apt remove beamadb
-```
-
-#### Option 2: Run Directly from Source
 ```bash
 git clone https://github.com/abdullohanvarov/beamadb.git
 cd beamadb
 
-chmod +x beamadb
-./beamadb
+# Optional Ubuntu dependency cache if libmpv-dev is not installed.
+# Downloads/extracts media packages locally; does not install system packages.
+./tools/prepare-media-linux.sh
+
+# Analyze, run unit/widget tests and build the release bundle.
+./tools/build-desktop-linux.sh
+
+# Open the standalone app.
+./launch.sh
 ```
 
----
-
-## 💻 Terminal CLI Usage
-
-BeamADB includes a comprehensive CLI that works natively on both **Windows** (Command Prompt / PowerShell) and **Linux** shells:
-
-```powershell
-# On Windows:
-beamadb [command]
-
-# On Linux:
-./beamadb [command]
-```
-
-| Command | Description |
-| :--- | :--- |
-| `beamadb` *(or `beamadb ui`)* | Launch the Graphical Web UI in your default browser |
-| `beamadb pair` *(or `beamadb qr`)* | Render UTF-8 QR code in terminal and wait for phone scan |
-| `beamadb code <ip:port> <code> [connect_port]` | Pair device manually using 6-digit code |
-| `beamadb connect <ip:port>` | Connect to an already paired device (e.g. `192.168.1.50:5555`) |
-| `beamadb devices` *(or `list`)* | List currently connected USB and Wi-Fi devices with details |
-| `beamadb discovered` *(or `mdns`)* | Scan and display local Wi-Fi mDNS ADB pairing and connect services |
-| `beamadb usb` | Switch a connected USB device to wireless mode (port 5555) |
-| `beamadb scrcpy [device]` | Launch bundled Scrcpy screen mirroring |
-| `beamadb camera [device]` | Launch bundled Scrcpy camera mirroring (Android 12+) |
-| `beamadb files [device] [path]` | Browse device filesystem from CLI |
-| `beamadb pull <device> <remote> [local]` | Download file or folder from device |
-| `beamadb push <device> <local> <remote>` | Upload file or folder to device |
-| `beamadb rm <device> <remote>` | Delete file or folder on device |
-| `beamadb disconnect <ip:port>` | Disconnect a specific wireless device |
-| `beamadb disconnect all` | Disconnect all connected wireless devices |
-| `beamadb restart` | Kill and restart the local ADB server daemon |
-| `beamadb status` | Check status of ADB daemon and BeamADB server |
-| `beamadb help` | Show usage options and flags |
-
----
-
-## 📱 How to Pair Your Android Phone with QR Code
-
-1. Connect your Android phone to the **same Wi-Fi network** as your computer (or connect your computer to your phone's Wi-Fi hotspot).
-2. On your phone, open **Settings** &rarr; **Developer options** &rarr; toggle on **Wireless debugging**.  
-   *(If Developer options is not enabled: Go to **Settings** &rarr; **About phone** &rarr; tap **Build number** 7 times).*
-3. Tap on **Wireless debugging** &rarr; tap **"Pair device with QR code"**.
-4. Point your phone camera at the QR code on your screen:
-   - In the **Web GUI**: Open BeamADB and view the **"Scan QR Code"** tab.
-   - In the **Terminal**: Run `beamadb pair` or `beamadb qr`.
-5. BeamADB detects your device broadcast, completes the TLS security handshake, discovers the active connect port, and connects wirelessly!
-
----
-
-## ⌨️ Web UI Keyboard Shortcuts
-
-| Shortcut | Action |
-| :--- | :--- |
-| `Alt + 1` | Switch to **QR Code Pairing** tab |
-| `Alt + 2` | Switch to **Manual 6-Digit Code** tab |
-| `Alt + 3` | Switch to **Discovered Network Devices** tab |
-| `Alt + R` | Refresh connected devices and trigger network rescan |
-| `Alt + S` | Restart local ADB server daemon |
-
----
-
-## 🛠️ Building Packages Locally
-
-### 🪟 Building the Windows Installer & Portable ZIP
-To build the standalone Windows executable, Inno Setup Installer, and portable ZIP archive:
-
-```cmd
-:: Ensure Inno Setup 6 and Python are installed, then run:
-build-windows-installer.bat
-```
-
-This compiles:
-1. `dist/beamadb.exe` (Standalone 64-bit Windows binary)
-2. `dist/BeamADB-1.0.0-Setup.exe` (Complete Inno Setup Windows installer)
-3. `dist/BeamADB-1.0.0-win64-portable.zip` (Portable ZIP package)
-
-### 🐧 Building the Debian (.deb) Package
-To compile the `.deb` package for Ubuntu/Debian/Mint:
+If Flutter is not on your PATH:
 
 ```bash
-chmod +x build-deb.sh
-./build-deb.sh
+FLUTTER_BIN=/path/to/flutter ./tools/build-desktop-linux.sh
 ```
 
-The resulting package is output to `dist/beamadb_1.0.0_all.deb`.
+The complete application is written to:
 
----
+```text
+desktop/build/linux/x64/release/bundle/
+```
 
-## 🔍 Troubleshooting
+Keep the bundle together, including `lib/`, `data/`, `bin/` and `licenses/`. Run its `beamadb` launcher when moving the bundle elsewhere.
 
-- **QR Code scan doesn't trigger connection**:
-  - Ensure your computer and Android device are on the **exact same Wi-Fi subnet**.
-  - Some public/corporate Wi-Fi networks enable **Client Isolation** (AP Isolation), which blocks devices from communicating with each other. If this is the case, connect your computer to your phone's **Wi-Fi Hotspot** or use a private home router.
-- **Port changes after phone reconnects**:
-  - Android rotates wireless debugging ports whenever Wi-Fi reconnects. Use `beamadb discovered` to see the new port or run `beamadb connect <ip:new_port>`.
-- **ADB server in bad state**:
-  - Run `beamadb restart` or click the "Restart ADB Server" button in the Web GUI to reset ADB.
-- **Windows Firewall Prompt**:
-  - When starting BeamADB for the first time, allow Windows Firewall access for local network mDNS discovery and ADB communication.
+### Build a Debian installer
 
----
+After building the release bundle:
 
-## 📄 License
+```bash
+./tools/package-desktop-linux.sh
+sudo apt install './dist/beamadb-desktop_2.0.0~preview1_amd64.deb'
+```
 
-Distributed under the [MIT License](LICENSE). See [LICENSE](LICENSE) for more details.
+Launch **BeamADB** from your applications menu or run `beamadb-desktop`. The package targets the distribution used to build it and declares its runtime dependencies. Installers are generated locally; they are not included in Git.
 
----
+### Connect your phone
 
-## 👤 Author
+1. Enable **Developer options** on the phone.
+2. For USB, enable **USB debugging**, connect a data cable, unlock the phone and approve the computer.
+3. For wireless, connect both devices to the same local network, enable **Wireless debugging**, then choose **Connect device** in BeamADB.
+4. Select **QR code** or **Pairing code** and follow the phone's pairing instructions.
+5. Choose **Screen**, **Files**, **Camera** or **Audio** in the sidebar.
 
-Developed by **[Abdulloh Anvarov](https://github.com/abdullohanvarov)**.
-Contributions, bug reports, and pull requests are welcome!
+For manual wireless connection, use the connection port on the main Wireless debugging screen. It differs from the temporary pairing port.
+
+## Development & verification
+
+```bash
+cd desktop
+flutter pub get
+flutter analyze
+flutter test test
+```
+
+The current validation record contains **10 unit/widget tests and 4 native integration tests**, plus a release-launch and package-content check. Native integration tests exercise navigation, texture decoding, a simulated scrcpy transport, recording and PCM audio. They need libmpv and a generated video fixture; instructions are in the [desktop development guide](desktop/README.md#verification).
+
+Real-device testing, Windows testing and broader Linux/GPU coverage remain necessary. Report issues with your OS, Android version, connection method, reproduction steps and relevant Activity output. Review diagnostic output before sharing it.
+
+### Project layout
+
+```text
+desktop/     Flutter app, Linux/Windows runners and tests
+docs/        Architecture, verification status, roadmap and preview
+tools/      Build, dependency preparation and packaging scripts
+bin/scrcpy/  Bundled platform tools and capture servers
+beamadb      Python CLI and explicit legacy web launcher
+server.py    Legacy local web server
+static/      Legacy web interface and project icon
+```
+
+## CLI & legacy web interface
+
+The Python CLI remains available alongside the desktop app:
+
+```bash
+./beamadb                 # Launch the built native desktop app
+./beamadb devices         # List connected phones
+./beamadb pair            # Pair using a terminal QR code
+./beamadb help            # See the full CLI command list
+./beamadb web             # Explicitly launch the legacy browser interface
+```
+
+The existing GitHub release workflow and frozen Python Windows installers still package the legacy CLI/web version. They do not build the Flutter desktop app.
+
+The legacy web server now binds to localhost. The desktop runtime operates independently of it. Earlier CLI/web features and packaging instructions are preserved in the [legacy guide](docs/LEGACY_WEB.md).
+
+## Documentation
+
+- [Desktop build and test guide](desktop/README.md)
+- [Architecture and media integration](docs/DESKTOP_ARCHITECTURE.md)
+- [Implementation status and roadmap](docs/DESKTOP_STATUS.md)
+- [Bundled tool checksums](docs/bundled-tools.json)
+- [Legacy CLI and web guide](docs/LEGACY_WEB.md)
+
+## License & credits
+
+BeamADB application source is available under the [MIT License](LICENSE). Bundled tools, fonts and native media libraries retain their own licenses; see their notices and the [dependency documentation](docs/DESKTOP_ARCHITECTURE.md#runtime-dependencies). The bundled Inter font includes its [Open Font License](desktop/assets/fonts/OFL.txt).
+
+Built with Flutter, Android Debug Bridge, scrcpy and media_kit.
+
+Created by [Abdulloh Anvarov](https://github.com/abdullohanvarov).

@@ -549,6 +549,24 @@ def start_server_daemon():
     return False
 
 def cmd_ui():
+    """Launch the standalone desktop app; never start the HTTP server implicitly."""
+    # Frozen Python installers remain the legacy web product.
+    if getattr(sys, "frozen", False):
+        return cmd_web()
+    candidates = [
+        APP_DIR / "desktop" / "build" / "linux" / "x64" / "release" / "bundle" / "beamadb",
+        Path("/usr/lib/beamadb/beamadb"),
+    ]
+    installed = shutil.which("beamadb-desktop")
+    if installed:
+        candidates.insert(0, Path(installed))
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            os.execv(str(candidate), [str(candidate)])
+    print("BeamADB desktop is not built. Run tools/build-desktop-linux.sh or install the desktop package.")
+    sys.exit(1)
+
+def cmd_web():
     print(f"[*] Starting BeamADB GUI on {URL}...")
     if not is_server_running():
         start_server_daemon()
@@ -566,8 +584,9 @@ Usage:
   beamadb [command] [options]
 
 Commands:
-  (no args)             Launch BeamADB GUI web application in your browser
-  ui, gui               Explicitly open GUI web interface
+  (no args)             Launch the native desktop app (legacy GUI in frozen installers)
+  ui, gui               Open the desktop app
+  web                   Explicitly open the legacy browser interface
   pair, qr              Terminal QR pairing mode: pair using terminal QR code
   code <host:port> <code> [connect_port]
                         Pair manually using IP, pairing port, and 6-digit code
@@ -601,7 +620,9 @@ def main():
         import server
         server.main()
         return
-    elif cmd in ("ui", "gui", "start", "web"):
+    elif cmd == "web":
+        cmd_web()
+    elif cmd in ("ui", "gui", "start"):
         cmd_ui()
     elif cmd in ("pair", "qr"):
         cmd_pair_cli()

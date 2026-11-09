@@ -43,7 +43,7 @@ except Exception:
 
 # Configuration
 PORT = int(os.environ.get("PORT", 5588))
-HOST = "0.0.0.0"
+HOST = "127.0.0.1"
 
 # Static directory resolution
 if getattr(sys, "frozen", False):
@@ -107,7 +107,7 @@ def find_adb():
         os.environ.get("ADB_PATH"),
         bundled.get("adb"),
         shutil.which("adb.exe" if sys.platform.startswith("win") else "adb"),
-        "C:\Apps\platform-tools\adb.exe",
+        r"C:\Apps\platform-tools\adb.exe",
         "/home/abdulloh/.local/bin/adb",
         "/home/abdulloh/Android/Sdk/platform-tools/adb",
     ]
