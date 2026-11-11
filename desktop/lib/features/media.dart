@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
+import '../core/mirror_window.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../core/adb.dart';
 import '../core/media_session.dart';
 import '../core/store.dart';
+import '../core/theme.dart';
 import 'widgets.dart';
 
 class MediaPage extends StatefulWidget {
@@ -16,12 +19,16 @@ class MediaPage extends StatefulWidget {
   final String mode;
   final String? runtimeError;
   final bool autoStart;
+  final bool emulatorMode;
+  final List<String> launchArgs;
   const MediaPage({
     super.key,
     required this.store,
     required this.mode,
     this.runtimeError,
     this.autoStart = false,
+    this.emulatorMode = false,
+    this.launchArgs = const [],
   });
   @override
   State<MediaPage> createState() => _MediaPageState();
@@ -32,7 +39,10 @@ class _MediaPageState extends State<MediaPage> {
   int quality = 1920, fps = 60, bitrate = 8000000;
   bool stayAwake = true, phoneScreenOff = false;
   String camera = 'back', source = 'audio';
+  int cameraRotation = 0;
+  bool cameraAudio = true;
   bool fullscreen = false;
+  bool isPinned = false;
   bool starting = false;
   bool autoStarted = false;
   final focus = FocusNode();
@@ -45,13 +55,34 @@ class _MediaPageState extends State<MediaPage> {
   @override
   void initState() {
     super.initState();
+    final options = widget.launchArgs
+        .where((a) => a.startsWith('--mirror-options='))
+        .firstOrNull;
+    if (options != null) {
+      try {
+        final data = jsonDecode(
+          utf8.decode(
+            base64Url.decode(options.substring('--mirror-options='.length)),
+          ),
+        );
+        quality = data['quality'] as int;
+        fps = data['fps'] as int;
+        bitrate = data['bitrate'] as int;
+        stayAwake = data['stayAwake'] as bool;
+      } catch (_) {}
+    }
     session = widget.store.sessions['${widget.store.selected}:${widget.mode}'];
     session?.addListener(updated);
+    _autoStart();
   }
 
   @override
   void didUpdateWidget(covariant MediaPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _autoStart();
+  }
+
+  void _autoStart() {
     if (widget.autoStart &&
         !autoStarted &&
         widget.store.ready &&
@@ -64,6 +95,16 @@ class _MediaPageState extends State<MediaPage> {
   }
 
   Future<void> start() async {
+    if (widget.mode == 'screen' && !widget.emulatorMode) {
+      await widget.store.openMirror(
+        quality: quality,
+        fps: fps,
+        bitrate: bitrate,
+        stayAwake: stayAwake,
+      );
+      if (mounted) await showResult(context, widget.store);
+      return;
+    }
     final device = widget.store.device;
     if (device == null || !device.ready) return;
     if (starting || (session?.active ?? false)) return;
@@ -88,6 +129,8 @@ class _MediaPageState extends State<MediaPage> {
         fps: fps,
         bitrate: bitrate,
         stayAwake: stayAwake,
+        cameraRotation: cameraRotation,
+        cameraAudio: cameraAudio,
       ),
     );
     starting = false;
@@ -99,6 +142,11 @@ class _MediaPageState extends State<MediaPage> {
   }
 
   void updated() {
+    if (widget.emulatorMode && session != null) {
+      stdout.writeln(
+        '$mirrorStatusPrefix${jsonEncode({'status': session!.status, 'detail': session!.detail})}',
+      );
+    }
     if (mounted) setState(() {});
   }
 
@@ -168,9 +216,354 @@ class _MediaPageState extends State<MediaPage> {
     super.dispose();
   }
 
+  Widget emulatorLayout(BuildContext context, bool active) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      backgroundColor: const Color(0xff0b0e14),
+      body: Column(
+        children: [
+          Container(
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xff121620),
+              border: Border(
+                bottom: BorderSide(
+                  color: colors.outlineVariant.withValues(alpha: .35),
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: DragToMoveArea(
+                    child: Container(
+                      color: Colors.transparent,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.smartphone_rounded,
+                            size: 16,
+                            color: beamBlue,
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'BeamADB · ${widget.store.device?.label ?? 'Phone Mirror'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -.2,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                WindowControls(
+                  buttonWidth: 32,
+                  buttonHeight: 26,
+                  onClose: () async {
+                    await session?.stop();
+                    await windowManager.destroy();
+                    exit(0);
+                  },
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: active
+                      ? videoView()
+                      : Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.smartphone_rounded,
+                                  size: 56,
+                                  color: colors.onSurfaceVariant.withValues(
+                                    alpha: .5,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  session?.status == 'Failed' ||
+                                          session?.status == 'Disconnected'
+                                      ? 'Mirror disconnected'
+                                      : (starting
+                                            ? 'Connecting to phone…'
+                                            : 'Screen mirror is ready'),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (session?.detail.isNotEmpty == true) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    session!.detail,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 4,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: colors.error,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: starting ? null : start,
+                                  icon: Icon(
+                                    starting
+                                        ? Icons.timelapse
+                                        : Icons.play_arrow_rounded,
+                                  ),
+                                  label: Text(
+                                    starting ? 'Starting…' : 'Start Mirror',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                ),
+                Container(
+                  width: 46,
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest.withValues(
+                      alpha: .85,
+                    ),
+                    border: Border(
+                      left: BorderSide(
+                        color: colors.outlineVariant.withValues(alpha: .3),
+                      ),
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 6),
+                          IconButton(
+                            tooltip: phoneScreenOff
+                                ? 'Turn screen on'
+                                : 'Turn screen off (Power)',
+                            iconSize: 20,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              phoneScreenOff
+                                  ? Icons.power_settings_new_rounded
+                                  : Icons.power_rounded,
+                              color: phoneScreenOff
+                                  ? Colors.grey
+                                  : Colors.amber,
+                            ),
+                            onPressed: () {
+                              phoneScreenOff = !phoneScreenOff;
+                              session?.displayPower(!phoneScreenOff);
+                              setState(() {});
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Volume Up',
+                            iconSize: 20,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.volume_up_rounded),
+                            onPressed: () => session?.key(24),
+                          ),
+                          IconButton(
+                            tooltip: 'Volume Down',
+                            iconSize: 20,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.volume_down_rounded),
+                            onPressed: () => session?.key(25),
+                          ),
+                          IconButton(
+                            tooltip: 'Rotate screen',
+                            iconSize: 19,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.screen_rotation_rounded),
+                            onPressed: () async {
+                              final serial = widget.store.selected;
+                              if (serial != null) {
+                                await widget.store.operation('Rotate screen', (
+                                  _,
+                                ) async {
+                                  await widget.store.adb.shell(
+                                    serial,
+                                    'settings put system user_rotation \$(( ( \$(settings get system user_rotation 2>/dev/null || echo 0) + 1 ) % 4 ))',
+                                  );
+                                });
+                              }
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Take screenshot',
+                            iconSize: 19,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.photo_camera_rounded),
+                            onPressed: screenshot,
+                          ),
+                          IconButton(
+                            tooltip: session?.recording == true
+                                ? 'Stop recording'
+                                : 'Record screen',
+                            iconSize: 19,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              session?.recording == true
+                                  ? Icons.stop_circle_rounded
+                                  : Icons.fiber_manual_record_rounded,
+                              color: session?.recording == true
+                                  ? Colors.red
+                                  : null,
+                            ),
+                            onPressed: record,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            child: Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: colors.outlineVariant.withValues(
+                                alpha: .4,
+                              ),
+                            ),
+                          ),
+                          AndroidNavControls(
+                            isVertical: true,
+                            iconSize: 20,
+                            buttonColor: const Color(0xffeceef4),
+                            onBack: () => session?.key(4),
+                            onHome: () => session?.key(3),
+                            onRecents: () => session?.key(187),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            child: Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: colors.outlineVariant.withValues(
+                                alpha: .4,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Paste clipboard',
+                            iconSize: 19,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.content_paste_rounded),
+                            onPressed: () async {
+                              final data = await Clipboard.getData(
+                                Clipboard.kTextPlain,
+                              );
+                              if (data?.text != null &&
+                                  data!.text!.isNotEmpty) {
+                                await widget.store.operation(
+                                  'Paste clipboard',
+                                  (_) => session!.paste(data.text!),
+                                );
+                              }
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Send text to phone',
+                            iconSize: 20,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.keyboard_rounded),
+                            onPressed: () async {
+                              final text = await askText(
+                                context,
+                                'Send text to phone',
+                                'Text',
+                              );
+                              if (text != null && text.isNotEmpty) {
+                                session?.text(text);
+                              }
+                            },
+                          ),
+                          IconButton(
+                            tooltip: isPinned
+                                ? 'Unpin window'
+                                : 'Always on top',
+                            iconSize: 19,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              isPinned
+                                  ? Icons.push_pin_rounded
+                                  : Icons.push_pin_outlined,
+                              color: isPinned ? beamBlue : null,
+                            ),
+                            onPressed: () async {
+                              setState(() => isPinned = !isPinned);
+                              await windowManager.setAlwaysOnTop(isPinned);
+                            },
+                          ),
+                          IconButton(
+                            tooltip: fullscreen
+                                ? 'Exit fullscreen'
+                                : 'Fullscreen',
+                            iconSize: 20,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              fullscreen
+                                  ? Icons.fullscreen_exit_rounded
+                                  : Icons.fullscreen_rounded,
+                            ),
+                            onPressed: () async {
+                              fullscreen = !fullscreen;
+                              await windowManager.setFullScreen(fullscreen);
+                              setState(() {});
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final active = session?.active ?? false;
+    final mirror = widget.mode == 'screen' && !widget.emulatorMode
+        ? widget.store.mirrors[widget.store.selected]
+        : null;
+    final active = (session?.active ?? false) || (mirror?.open ?? false);
+    if (widget.emulatorMode && widget.mode == 'screen') {
+      return Theme(
+        data: beamTheme(Brightness.dark),
+        child: VirtualWindowFrame(
+          child: Builder(builder: (context) => emulatorLayout(context, active)),
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -182,7 +575,37 @@ class _MediaPageState extends State<MediaPage> {
             _ => 'A bigger canvas for everything on your phone.',
           },
           actions: [
-            if (active && widget.mode != 'audio')
+            if (active && widget.mode == 'camera') ...[
+              IconButton(
+                tooltip: 'Rotate camera 90°',
+                icon: const Icon(Icons.rotate_90_degrees_cw_rounded),
+                onPressed: () {
+                  final next =
+                      ((session?.cameraRotation ?? cameraRotation) + 90) % 360;
+                  session?.rotateCamera(next);
+                  setState(() => cameraRotation = next);
+                },
+              ),
+              if (session?.cameraAudio == true)
+                IconButton(
+                  tooltip: session!.cameraAudioMuted
+                      ? 'Unmute camera voice'
+                      : 'Mute camera voice',
+                  icon: Icon(
+                    session!.cameraAudioMuted
+                        ? Icons.mic_off_rounded
+                        : Icons.mic_rounded,
+                  ),
+                  color: session!.cameraAudioMuted
+                      ? Colors.redAccent
+                      : beamBlue,
+                  onPressed: () {
+                    session!.setCameraAudioMuted(!session!.cameraAudioMuted);
+                    setState(() {});
+                  },
+                ),
+            ],
+            if (active && widget.mode != 'audio' && mirror == null)
               IconButton(
                 tooltip: fullscreen ? 'Exit fullscreen' : 'Fullscreen',
                 onPressed: () async {
@@ -194,7 +617,7 @@ class _MediaPageState extends State<MediaPage> {
                   fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
                 ),
               ),
-            if (active)
+            if (active && mirror == null)
               OutlinedButton.icon(
                 onPressed: detached,
                 icon: const Icon(Icons.open_in_new, size: 17),
@@ -204,7 +627,7 @@ class _MediaPageState extends State<MediaPage> {
               onPressed: starting
                   ? null
                   : active
-                  ? () => session?.stop()
+                  ? () => mirror != null ? mirror.stop() : session?.stop()
                   : !widget.store.ready || widget.runtimeError != null
                   ? null
                   : start,
@@ -255,7 +678,7 @@ class _MediaPageState extends State<MediaPage> {
                   ],
                   onChanged: (v) => setState(() => quality = v!),
                 ),
-              if (widget.mode == 'camera')
+              if (widget.mode == 'camera') ...[
                 DropdownButton<String>(
                   value: camera,
                   items: ['back', 'front', 'external']
@@ -268,6 +691,36 @@ class _MediaPageState extends State<MediaPage> {
                       .toList(),
                   onChanged: (v) => setState(() => camera = v!),
                 ),
+                DropdownButton<int>(
+                  value: cameraRotation,
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('0° (Normal)')),
+                    DropdownMenuItem(value: 90, child: Text('90° (Clockwise)')),
+                    DropdownMenuItem(
+                      value: 180,
+                      child: Text('180° (Inverted)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 270,
+                      child: Text('270° (Counter-clockwise)'),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => cameraRotation = v!),
+                ),
+                FilterChip(
+                  selected: cameraAudio,
+                  showCheckmark: false,
+                  avatar: Icon(
+                    cameraAudio ? Icons.mic_rounded : Icons.mic_off_rounded,
+                    size: 16,
+                    color: cameraAudio ? beamBlue : Colors.grey,
+                  ),
+                  label: Text(
+                    cameraAudio ? 'Camera audio: ON' : 'Camera audio: OFF',
+                  ),
+                  onSelected: (val) => setState(() => cameraAudio = val),
+                ),
+              ],
               if (widget.mode == 'audio')
                 SegmentedButton<String>(
                   segments: const [
@@ -287,13 +740,34 @@ class _MediaPageState extends State<MediaPage> {
                 ),
             ],
           ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
         Expanded(
           child: Panel(
             padding: EdgeInsets.zero,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
-              child: active
+              child: mirror != null
+                  ? EmptyState(
+                      Icons.screen_share_rounded,
+                      mirror.open
+                          ? (mirror.status == 'Live'
+                                ? 'Screen is being mirrored'
+                                : 'Screen mirror · ${mirror.status}')
+                          : 'Screen mirror · ${mirror.status}',
+                      mirror.detail.isNotEmpty
+                          ? mirror.detail
+                          : mirror.open
+                          ? 'Your phone screen is open in a separate window.'
+                          : 'Start Screen to open a new mirror window.',
+                      action: mirror.open
+                          ? OutlinedButton.icon(
+                              onPressed: () => mirror.command('focus'),
+                              icon: const Icon(Icons.open_in_new),
+                              label: const Text('Show mirror window'),
+                            )
+                          : null,
+                    )
+                  : active
                   ? Stack(
                       children: [
                         Positioned.fill(
@@ -372,31 +846,21 @@ class _MediaPageState extends State<MediaPage> {
             ),
           ),
         ),
-        if (active)
+        if (active && mirror == null)
           Padding(
-            padding: const EdgeInsets.only(top: 14),
+            padding: const EdgeInsets.only(top: 8),
             child: Wrap(
-              spacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (widget.mode == 'screen') ...[
-                  IconButton(
-                    tooltip: 'Back',
-                    onPressed: () => session!.key(4),
-                    icon: const Icon(Icons.arrow_back),
+                  AndroidNavControls(
+                    onBack: () => session!.key(4),
+                    onHome: () => session!.key(3),
+                    onRecents: () => session!.key(187),
                   ),
-                  IconButton(
-                    tooltip: 'Home',
-                    onPressed: () => session!.key(3),
-                    icon: const Icon(Icons.circle_outlined),
-                  ),
-                  IconButton(
-                    tooltip: 'Recent apps',
-                    onPressed: () => session!.key(187),
-                    icon: const Icon(Icons.crop_square),
-                  ),
-                ],
-                if (widget.mode == 'screen')
+                  const SizedBox(width: 4),
                   IconButton(
                     tooltip: phoneScreenOff
                         ? 'Turn phone screen on'
@@ -408,8 +872,45 @@ class _MediaPageState extends State<MediaPage> {
                     },
                     icon: Icon(
                       phoneScreenOff ? Icons.smartphone : Icons.phonelink_lock,
+                      color: phoneScreenOff ? Colors.grey : null,
                     ),
                   ),
+                ],
+                if (widget.mode == 'camera') ...[
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      await session?.rotateCamera();
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.rotate_right_rounded, size: 18),
+                    label: Text('Rotate (${session?.cameraRotation ?? 0}°)'),
+                  ),
+                  if (session?.cameraAudio == true)
+                    FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: (session?.cameraAudioMuted ?? false)
+                            ? Colors.red
+                            : beamBlue,
+                      ),
+                      onPressed: () async {
+                        final newMuted = !(session?.cameraAudioMuted ?? false);
+                        await session?.setCameraAudioMuted(newMuted);
+                        setState(() {});
+                      },
+                      icon: Icon(
+                        (session?.cameraAudioMuted ?? false)
+                            ? Icons.mic_off_rounded
+                            : Icons.mic_rounded,
+                        size: 18,
+                      ),
+                      label: Text(
+                        (session?.cameraAudioMuted ?? false)
+                            ? 'Turn on voice'
+                            : 'Turn off voice',
+                      ),
+                    ),
+                ],
                 if (widget.mode != 'audio')
                   OutlinedButton.icon(
                     onPressed: screenshot,
@@ -473,8 +974,11 @@ class _MediaPageState extends State<MediaPage> {
     if (controller == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    final width = session!.player!.state.width ?? 1080;
-    final height = session!.player!.state.height ?? 1920;
+    final rawW = session!.player!.state.width ?? 1080;
+    final rawH = session!.player!.state.height ?? 1920;
+    final isRotated = (session?.cameraRotation ?? 0) % 180 != 0;
+    final width = isRotated ? rawH : rawW;
+    final height = isRotated ? rawW : rawH;
     return ColoredBox(
       color: const Color(0xff0d1016),
       child: Center(

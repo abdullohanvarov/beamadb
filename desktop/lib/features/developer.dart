@@ -230,7 +230,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
             onSelectionChanged: (s) => setState(() => tab = s.first),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
         if (!widget.store.ready)
           const Expanded(
             child: EmptyState(

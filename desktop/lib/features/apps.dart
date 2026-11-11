@@ -242,16 +242,31 @@ class _AppsPageState extends State<AppsPage> {
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Search package name',
+                child: SizedBox(
+                  height: 36,
+                  child: TextField(
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      prefixIconConstraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      hintText: 'Search package name…',
+                      hintStyle: const TextStyle(fontSize: 12.5),
+                    ),
+                    onChanged: (v) => setState(() => query = v),
                   ),
-                  onChanged: (v) => setState(() => query = v),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 10),
               FilterChip(
+                visualDensity: VisualDensity.compact,
+                labelStyle: const TextStyle(fontSize: 12),
                 label: const Text('System apps'),
                 selected: system,
                 onSelected: (v) {
@@ -261,12 +276,14 @@ class _AppsPageState extends State<AppsPage> {
               ),
               IconButton(
                 tooltip: 'Refresh apps',
+                iconSize: 18,
+                visualDensity: VisualDensity.compact,
                 onPressed: load,
                 icon: const Icon(Icons.refresh),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           if (error != null) Notice(error!, error: true),
           if (system)
             const Notice(

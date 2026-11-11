@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 import '../core/store.dart';
 
 class PageHeading extends StatelessWidget {
@@ -11,39 +12,51 @@ class PageHeading extends StatelessWidget {
     this.actions = const [],
   });
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 24),
-    child: Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 24,
-      runSpacing: 14,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -.8,
-              ),
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -.4,
+                  ),
+                ),
+                if (subtitle.isNotEmpty)
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: actions,
             ),
           ],
-        ),
-        if (actions.isNotEmpty)
-          Wrap(spacing: 8, runSpacing: 8, children: actions),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 class Panel extends StatelessWidget {
@@ -235,6 +248,373 @@ Future<void> showResult(BuildContext context, AppStore store) async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${activity.title}: ${activity.state.toLowerCase()}'),
+      ),
+    );
+  }
+}
+
+class WindowControls extends StatefulWidget {
+  final VoidCallback? onClose;
+  final bool showMaximize;
+  final double buttonWidth;
+  final double buttonHeight;
+
+  const WindowControls({
+    super.key,
+    this.onClose,
+    this.showMaximize = true,
+    this.buttonWidth = 38,
+    this.buttonHeight = 28,
+  });
+
+  @override
+  State<WindowControls> createState() => _WindowControlsState();
+}
+
+class _WindowControlsState extends State<WindowControls> with WindowListener {
+  bool isMaximized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+    _check();
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowMaximize() => _check();
+
+  @override
+  void onWindowUnmaximize() => _check();
+
+  Future<void> _check() async {
+    try {
+      final max = await windowManager.isMaximized();
+      if (mounted && max != isMaximized) {
+        setState(() => isMaximized = max);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xff1f2433)
+            : colors.surfaceContainerHighest.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: isDark ? 0.6 : 0.8),
+          width: 1.2,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _WindowBtn(
+            icon: Icons.remove_rounded,
+            iconSize: 18,
+            tooltip: 'Minimize',
+            width: widget.buttonWidth,
+            height: widget.buttonHeight,
+            onTap: () => windowManager.minimize(),
+          ),
+          if (widget.showMaximize) ...[
+            const SizedBox(width: 1),
+            _WindowBtn(
+              icon: isMaximized
+                  ? Icons.filter_none_rounded
+                  : Icons.crop_square_rounded,
+              iconSize: isMaximized ? 13 : 15,
+              tooltip: isMaximized ? 'Restore' : 'Maximize',
+              width: widget.buttonWidth,
+              height: widget.buttonHeight,
+              onTap: () async {
+                try {
+                  if (await windowManager.isMaximized()) {
+                    await windowManager.unmaximize();
+                    setState(() => isMaximized = false);
+                  } else {
+                    await windowManager.maximize();
+                    setState(() => isMaximized = true);
+                  }
+                } catch (_) {}
+              },
+            ),
+          ],
+          const SizedBox(width: 1),
+          _WindowBtn(
+            icon: Icons.close_rounded,
+            iconSize: 17,
+            tooltip: 'Close',
+            isClose: true,
+            width: widget.buttonWidth,
+            height: widget.buttonHeight,
+            onTap: widget.onClose ?? () => windowManager.close(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WindowBtn extends StatefulWidget {
+  final IconData icon;
+  final double iconSize;
+  final String tooltip;
+  final bool isClose;
+  final double width;
+  final double height;
+  final VoidCallback? onTap;
+
+  const _WindowBtn({
+    required this.icon,
+    required this.iconSize,
+    required this.tooltip,
+    this.isClose = false,
+    required this.width,
+    required this.height,
+    this.onTap,
+  });
+
+  @override
+  State<_WindowBtn> createState() => _WindowBtnState();
+}
+
+class _WindowBtnState extends State<_WindowBtn> {
+  bool hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final normalColor = isDark
+        ? const Color(0xffffffff)
+        : const Color(0xff111318);
+
+    Color bg = Colors.transparent;
+    Color iconCol = normalColor;
+
+    if (hovering) {
+      if (widget.isClose) {
+        bg = const Color(0xffe81123);
+        iconCol = Colors.white;
+      } else {
+        bg = isDark
+            ? Colors.white.withValues(alpha: 0.22)
+            : colors.onSurface.withValues(alpha: 0.12);
+        iconCol = isDark ? Colors.white : Colors.black;
+      }
+    }
+
+    return Tooltip(
+      message: widget.tooltip,
+      waitDuration: const Duration(milliseconds: 400),
+      child: SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: TextButton(
+          onPressed: widget.onTap,
+          onHover: (value) => setState(() => hovering = value),
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: Size.zero,
+            foregroundColor: iconCol,
+            backgroundColor: bg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+          child: CustomPaint(
+            size: Size.square(widget.iconSize),
+            painter: _WindowGlyph(widget.tooltip, iconCol),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Draw essential window controls independently of icon font loading.
+class _WindowGlyph extends CustomPainter {
+  final String action;
+  final Color color;
+  const _WindowGlyph(this.action, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.6
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final rect = Offset.zero & size;
+    final box = rect.deflate(3);
+    switch (action) {
+      case 'Minimize':
+        canvas.drawLine(
+          Offset(box.left, size.height / 2),
+          Offset(box.right, size.height / 2),
+          paint,
+        );
+      case 'Close':
+        canvas.drawLine(box.topLeft, box.bottomRight, paint);
+        canvas.drawLine(box.topRight, box.bottomLeft, paint);
+      case 'Restore':
+        canvas.drawRect(
+          Rect.fromLTWH(4, 2, size.width - 6, size.height - 6),
+          paint,
+        );
+        canvas.drawRect(
+          Rect.fromLTWH(2, 4, size.width - 6, size.height - 6),
+          paint,
+        );
+      default:
+        canvas.drawRect(box, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WindowGlyph oldDelegate) =>
+      action != oldDelegate.action || color != oldDelegate.color;
+}
+
+class AndroidNavControls extends StatelessWidget {
+  final VoidCallback onBack;
+  final VoidCallback onHome;
+  final VoidCallback onRecents;
+  final bool isVertical;
+  final Color? buttonColor;
+  final double iconSize;
+
+  const AndroidNavControls({
+    super.key,
+    required this.onBack,
+    required this.onHome,
+    required this.onRecents,
+    this.isVertical = false,
+    this.buttonColor,
+    this.iconSize = 20,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveColor =
+        buttonColor ??
+        (isDark ? const Color(0xffeceef4) : const Color(0xff22262e));
+
+    Widget buildNavBtn({
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback onTap,
+      double? sizeOverride,
+    }) {
+      return _NavIconBtn(
+        icon: icon,
+        iconSize: sizeOverride ?? iconSize,
+        tooltip: tooltip,
+        color: effectiveColor,
+        onTap: onTap,
+      );
+    }
+
+    final children = [
+      buildNavBtn(
+        icon: Icons.arrow_back_ios_new_rounded,
+        sizeOverride: iconSize - 2,
+        tooltip: 'Back',
+        onTap: onBack,
+      ),
+      buildNavBtn(icon: Icons.circle_outlined, tooltip: 'Home', onTap: onHome),
+      buildNavBtn(
+        icon: Icons.crop_square_rounded,
+        tooltip: 'Recent apps',
+        onTap: onRecents,
+      ),
+    ];
+
+    if (isVertical) {
+      return Column(mainAxisSize: MainAxisSize.min, children: children);
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
+    );
+  }
+}
+
+class _NavIconBtn extends StatefulWidget {
+  final IconData icon;
+  final double iconSize;
+  final String tooltip;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _NavIconBtn({
+    required this.icon,
+    required this.iconSize,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  State<_NavIconBtn> createState() => _NavIconBtnState();
+}
+
+class _NavIconBtnState extends State<_NavIconBtn> {
+  bool hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => hovering = true),
+        onExit: (_) => setState(() => hovering = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 38,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: hovering
+                  ? colors.primary.withValues(alpha: 0.15)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              widget.icon,
+              size: widget.iconSize,
+              color: hovering ? colors.primary : widget.color,
+            ),
+          ),
+        ),
       ),
     );
   }

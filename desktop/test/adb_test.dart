@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:beamadb_desktop/core/adb.dart';
+import 'package:beamadb_desktop/core/media_session.dart';
 
 void main() {
   test('Android semantic failures do not become successful operations', () {
@@ -98,4 +99,18 @@ void main() {
     );
     await adb.close();
   }, skip: Platform.isWindows);
+  test('camera session tracks rotation and audio muting state', () async {
+    final adb = Adb();
+    final session = MediaSession(adb, 'device_test', 'camera');
+    expect(session.cameraRotation, 0);
+    expect(session.cameraAudioMuted, false);
+    await session.rotateCamera(90);
+    expect(session.cameraRotation, 90);
+    await session.rotateCamera();
+    expect(session.cameraRotation, 180);
+    await session.setCameraAudioMuted(true);
+    expect(session.cameraAudioMuted, true);
+    await session.setCameraAudioMuted(false);
+    expect(session.cameraAudioMuted, false);
+  });
 }

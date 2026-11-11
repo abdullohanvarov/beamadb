@@ -21,6 +21,13 @@ class MediaSession extends ChangeNotifier {
   String? _remoteServer;
   ServerSocket? _relay;
   int? _forwardPort;
+  int cameraRotation = 0;
+  bool cameraAudio = false;
+  bool cameraAudioMuted = false;
+  Player? audioPlayer;
+  Socket? _audioSource;
+  ServerSocket? _audioRelay;
+  Socket? _audioConsumer;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   String status = 'Stopped', detail = '';
   bool _closing = false, _disposed = false;
@@ -39,8 +46,13 @@ class MediaSession extends ChangeNotifier {
     String camera = 'back',
     int bitrate = 8000000,
     bool stayAwake = true,
+    int cameraRotation = 0,
+    bool cameraAudio = true,
   }) async {
     if (active || _closing) return;
+    this.cameraRotation = cameraRotation;
+    this.cameraAudio = cameraAudio;
+    cameraAudioMuted = false;
     status = 'Starting';
     detail = '';
     emit();
@@ -79,6 +91,7 @@ class MediaSession extends ChangeNotifier {
         'localabstract:scrcpy_$id',
       ]);
       _forwardPort = int.parse(portText.trim());
+      final hasAudio = audioOnly || (mode == 'camera' && cameraAudio);
       final args = [
         'CLASSPATH=$_remoteServer',
         'app_process',
@@ -91,16 +104,16 @@ class MediaSession extends ChangeNotifier {
         'send_dummy_byte=true',
         'cleanup=true',
         'video=${!audioOnly}',
-        'audio=$audioOnly',
+        'audio=$hasAudio',
         'control=${!audioOnly && mode == 'screen'}',
         'max_size=$maxSize',
         'max_fps=$fps',
         'video_codec=h264',
         'video_bit_rate=$bitrate',
         'stay_awake=$stayAwake',
-        if (audioOnly) ...[
+        if (hasAudio) ...[
           'audio_codec=raw',
-          'audio_source=${mode == 'mic' ? 'mic' : 'output'}',
+          'audio_source=${mode == 'camera' ? 'mic' : (mode == 'mic' ? 'mic' : 'output')}',
         ],
         if (mode == 'camera') ...[
           'video_source=camera',
@@ -173,6 +186,60 @@ class MediaSession extends ChangeNotifier {
       }
       if (_source == null) {
         throw BeamException('The phone capture service did not start.', detail);
+      }
+      if (mode == 'camera' && cameraAudio) {
+        for (var attempt = 0; attempt < 15; attempt++) {
+          try {
+            _audioSource = await Socket.connect(
+              InternetAddress.loopbackIPv4,
+              _forwardPort!,
+              timeout: const Duration(milliseconds: 500),
+            );
+            break;
+          } catch (_) {
+            await Future<void>.delayed(const Duration(milliseconds: 150));
+          }
+        }
+        if (_audioSource != null) {
+          _audioRelay = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+          _subscriptions.add(
+            _audioRelay!.listen((consumer) {
+              if (_audioConsumer != null) {
+                consumer.destroy();
+                return;
+              }
+              _audioConsumer = consumer;
+              unawaited(consumer.done.catchError((Object _) {}));
+              unawaited(
+                consumer.addStream(_audioSource!).catchError((Object e) {
+                  if (!_closing) {
+                    detail += '\nCamera audio stream error: $e';
+                  }
+                }),
+              );
+            }),
+          );
+          audioPlayer = Player(
+            configuration: const PlayerConfiguration(
+              bufferSize: 256 * 1024,
+              logLevel: MPVLogLevel.warn,
+            ),
+          );
+          final nativeAudio = audioPlayer!.platform as NativePlayer;
+          await nativeAudio.setProperty('demuxer', 'rawaudio');
+          await nativeAudio.setProperty('demuxer-rawaudio-rate', '48000');
+          await nativeAudio.setProperty('demuxer-rawaudio-channels', 'stereo');
+          await nativeAudio.setProperty('demuxer-rawaudio-format', 's16le');
+          await nativeAudio.setProperty('cache', 'no');
+          await nativeAudio.setProperty('untimed', 'yes');
+          unawaited(
+            audioPlayer!
+                .open(Media('tcp://127.0.0.1:${_audioRelay!.port}'))
+                .catchError((Object e) {
+                  detail += '\nCamera audio playback error: $e';
+                }),
+          );
+        }
       }
       if (!audioOnly && mode == 'screen') {
         _control = await Socket.connect(
@@ -251,6 +318,9 @@ class MediaSession extends ChangeNotifier {
         await native.setProperty('demuxer-lavf-analyzeduration', '0.1');
         await native.setProperty('untimed', 'yes');
         await native.setProperty('vd-lavc-threads', '1');
+        if (cameraRotation != 0) {
+          await native.setProperty('video-rotate', '$cameraRotation');
+        }
       }
       _subscriptions.add(
         player!.stream.error.listen((error) {
@@ -372,6 +442,23 @@ class MediaSession extends ChangeNotifier {
     _control?.add(data.buffer.asUint8List());
   }
 
+  Future<void> rotateCamera([int? newRotation]) async {
+    cameraRotation = newRotation ?? ((cameraRotation + 90) % 360);
+    if (player != null) {
+      try {
+        final native = player!.platform as NativePlayer;
+        await native.setProperty('video-rotate', '$cameraRotation');
+      } catch (_) {}
+    }
+    emit();
+  }
+
+  Future<void> setCameraAudioMuted(bool value) async {
+    cameraAudioMuted = value;
+    await audioPlayer?.setVolume(value ? 0 : 100);
+    emit();
+  }
+
   Future<void> setMuted(bool value) async {
     muted = value;
     await player?.setVolume(value ? 0 : 100);
@@ -407,10 +494,18 @@ class MediaSession extends ChangeNotifier {
     _consumer = null;
     await _relay?.close();
     _relay = null;
+    _audioConsumer?.destroy();
+    _audioConsumer = null;
+    await _audioRelay?.close();
+    _audioRelay = null;
+    _audioSource?.destroy();
+    _audioSource = null;
     for (final sub in _subscriptions) {
       await sub.cancel();
     }
     _subscriptions.clear();
+    await audioPlayer?.dispose();
+    audioPlayer = null;
     await player?.dispose();
     player = null;
     video = null;

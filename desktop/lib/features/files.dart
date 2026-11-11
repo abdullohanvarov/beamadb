@@ -333,27 +333,6 @@ class _FilesPageState extends State<FilesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        PageHeading(
-          'Files',
-          'Move what matters. Keep everything in its place.',
-          actions: [
-            OutlinedButton.icon(
-              onPressed: widget.store.ready ? createFolder : null,
-              icon: const Icon(Icons.create_new_folder_outlined, size: 17),
-              label: const Text('New folder'),
-            ),
-            FilledButton.icon(
-              onPressed: widget.store.ready
-                  ? () async {
-                      final chosen = await openFiles();
-                      await upload(chosen.map((f) => f.path).toList());
-                    }
-                  : null,
-              icon: const Icon(Icons.upload_rounded, size: 18),
-              label: const Text('Upload'),
-            ),
-          ],
-        ),
         if (!widget.store.ready)
           const Expanded(
             child: EmptyState(
@@ -367,92 +346,175 @@ class _FilesPageState extends State<FilesPage> {
             children: [
               IconButton(
                 tooltip: 'Back',
+                iconSize: 19,
+                visualDensity: VisualDensity.compact,
                 onPressed: history.isEmpty
                     ? null
                     : () => load(history.removeLast(), remember: false),
-                icon: const Icon(Icons.arrow_back),
+                icon: const Icon(Icons.arrow_back_rounded),
               ),
               IconButton(
                 tooltip: 'Parent folder',
+                iconSize: 19,
+                visualDensity: VisualDensity.compact,
                 onPressed: path == '/'
                     ? null
                     : () => load(p.posix.dirname(path)),
-                icon: const Icon(Icons.arrow_upward),
+                icon: const Icon(Icons.arrow_upward_rounded),
               ),
+              const SizedBox(width: 4),
               Expanded(
-                child: TextField(
-                  controller: pathController,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.folder_open_outlined),
-                    isDense: true,
+                child: SizedBox(
+                  height: 36,
+                  child: TextField(
+                    controller: pathController,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      prefixIcon:
+                          const Icon(Icons.folder_open_outlined, size: 18),
+                      prefixIconConstraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onSubmitted: load,
                   ),
-                  onSubmitted: load,
                 ),
               ),
+              const SizedBox(width: 6),
               IconButton(
                 tooltip: 'Refresh folder',
+                iconSize: 19,
+                visualDensity: VisualDensity.compact,
                 onPressed: () => load(path, remember: false),
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+                onPressed: widget.store.ready ? createFolder : null,
+                icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+                label: const Text('New folder', style: TextStyle(fontSize: 12.5)),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+                onPressed: widget.store.ready
+                    ? () async {
+                        final chosen = await openFiles();
+                        await upload(chosen.map((f) => f.path).toList());
+                      }
+                    : null,
+                icon: const Icon(Icons.upload_rounded, size: 16),
+                label: const Text('Upload', style: TextStyle(fontSize: 12.5)),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children:
-                [
-                      'Internal storage',
-                      'Download',
-                      'DCIM',
-                      'Pictures',
-                      'Documents',
-                      'Music',
-                    ]
-                    .map(
-                      (name) => ActionChip(
-                        label: Text(name),
-                        onPressed: () => load(
-                          name == 'Internal storage'
-                              ? '/sdcard'
-                              : '/sdcard/$name',
-                        ),
-                      ),
-                    )
-                    .toList(),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(
+              SizedBox(
+                width: 180,
+                height: 32,
                 child: TextField(
-                  decoration: const InputDecoration(
-                    hintText: 'Filter this folder',
-                    prefixIcon: Icon(Icons.search),
+                  style: const TextStyle(fontSize: 12.5),
+                  decoration: InputDecoration(
+                    hintText: 'Filter files…',
+                    hintStyle: const TextStyle(fontSize: 12),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                    prefixIconConstraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                     isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   onChanged: (v) => setState(() => query = v),
                 ),
               ),
-              const SizedBox(width: 12),
-              TextButton(
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final name in [
+                        'Storage',
+                        'Download',
+                        'DCIM',
+                        'Pictures',
+                        'Documents',
+                        'Music',
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            labelStyle: const TextStyle(fontSize: 11.5),
+                            label: Text(name),
+                            onPressed: () => load(
+                              name == 'Storage'
+                                  ? '/sdcard'
+                                  : '/sdcard/$name',
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: ascending ? 'Sort descending' : 'Sort ascending',
+                iconSize: 18,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() => ascending = !ascending),
+                icon: Icon(
+                  ascending
+                      ? Icons.arrow_downward_rounded
+                      : Icons.arrow_upward_rounded,
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 onPressed: () async {
                   final folder = await getDirectoryPath();
                   if (folder != null) await upload([folder]);
                 },
-                child: const Text('Upload folder'),
+                icon: const Icon(Icons.drive_folder_upload_outlined, size: 16),
+                label: const Text('Folder', style: TextStyle(fontSize: 12)),
               ),
-              if (selected.isNotEmpty)
+              if (selected.isNotEmpty) ...[
+                const SizedBox(width: 4),
                 IconButton(
-                  tooltip: 'Delete selected',
+                  tooltip: 'Delete selected (${selected.length})',
+                  iconSize: 18,
+                  visualDensity: VisualDensity.compact,
                   onPressed: () => remove(
                     files.where((f) => selected.contains(f.path)).toList(),
                   ),
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
                 ),
+              ],
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           if (error != null) Notice(error!, error: true),
           if (loading) const LinearProgressIndicator(),
           Expanded(

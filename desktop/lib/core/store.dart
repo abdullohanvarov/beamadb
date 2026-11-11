@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'mirror_window.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'adb.dart';
@@ -25,6 +27,69 @@ class AppStore extends ChangeNotifier {
   bool initialized = false, scanning = false, disposed = false;
   final List<Activity> activities = [];
   final Map<String, MediaSession> sessions = {};
+  final Map<String, MirrorWindow> mirrors = {};
+  final Set<String> _openingMirrors = {};
+
+  Future<void> openMirror({
+    int quality = 1920,
+    int fps = 60,
+    int bitrate = 8000000,
+    bool stayAwake = true,
+  }) async {
+    final serial = selected;
+    if (serial == null || !ready) return;
+    final existing = mirrors[serial];
+    if (existing?.open == true) {
+      existing!.command('focus');
+      return;
+    }
+    if (!_openingMirrors.add(serial)) return;
+    try {
+      await operation('Open screen mirror', (_) async {
+        final process = await Process.start(
+          Platform.resolvedExecutable,
+          [
+            '--session',
+            serial,
+            'screen',
+            '--mirror-options=${base64Url.encode(utf8.encode(jsonEncode({'quality': quality, 'fps': fps, 'bitrate': bitrate, 'stayAwake': stayAwake})))}',
+          ],
+          environment: {
+            'BEAMADB_HOME':
+                Platform.environment['BEAMADB_HOME'] ??
+                Directory.current.parent.path,
+          },
+        );
+        final mirror = MirrorWindow(serial, process);
+        mirrors[serial] = mirror;
+        cleanups.add(mirror.stop);
+        process.stdout
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .listen((line) {
+              mirror.update(line);
+              emit();
+            });
+        unawaited(process.stderr.drain<void>());
+        unawaited(
+          process.exitCode.then((code) {
+            mirror.open = false;
+            if (code != 0 && mirror.status != 'Failed') {
+              mirror.status = 'Failed';
+              mirror.detail = 'Mirror window closed unexpectedly (exit $code).';
+            } else if (mirror.status != 'Failed') {
+              mirror.status = 'Stopped';
+            }
+            cleanups.remove(mirror.stop);
+            emit();
+          }),
+        );
+      });
+    } finally {
+      _openingMirrors.remove(serial);
+    }
+  }
+
   final Set<Future<void> Function()> cleanups = {};
   final Map<String, Map<String, String>> metadata = {};
   final Map<String, DateTime> _metadataAt = {};

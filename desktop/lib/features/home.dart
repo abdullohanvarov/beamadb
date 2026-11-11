@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 import '../core/store.dart';
 import '../core/theme.dart';
 import 'widgets.dart';
@@ -65,6 +66,19 @@ class _HomeState extends State<Home> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant Home oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (detached && widget.args.length >= 3) {
+      store.selected = widget.args[1];
+      page = switch (widget.args[2]) {
+        'camera' => 3,
+        'audio' || 'mic' => 4,
+        _ => 1,
+      };
+    }
+  }
+
   void navigate(int value) => setState(() => page = value);
   Future<void> pair() => showDialog<void>(
     context: context,
@@ -73,34 +87,107 @@ class _HomeState extends State<Home> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    if (detached) {
+      return Scaffold(
+        body: Column(
+          children: [
+            if (page != 1)
+              Container(
+                height: 38,
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainer,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: colors.outlineVariant.withValues(alpha: .35),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DragToMoveArea(
+                        child: Container(
+                          color: Colors.transparent,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                page == 3
+                                    ? Icons.videocam_rounded
+                                    : Icons.volume_up_rounded,
+                                size: 16,
+                                color: beamBlue,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'BeamADB · ${page == 3 ? 'Camera' : 'Audio'} Stream',
+                                style: TextStyle(
+                                  color: colors.onSurface,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    WindowControls(
+                      buttonWidth: 32,
+                      buttonHeight: 26,
+                      onClose: () async {
+                        await windowManager.destroy();
+                        exit(0);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: MediaPage(
+                key: ValueKey('detached-$page-${store.selected}'),
+                store: store,
+                mode: page == 3 ? 'camera' : (page == 4 ? 'audio' : 'screen'),
+                runtimeError: widget.mediaError,
+                autoStart: true,
+                emulatorMode: page == 1,
+                launchArgs: widget.args,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     final failure = store.activities
         .where((a) => a.state == 'Failed' && !dismissedFailures.contains(a))
         .firstOrNull;
     return Scaffold(
       body: Row(
         children: [
-          if (!detached)
-            Container(
-              width: 214,
-              decoration: BoxDecoration(
-                border: Border(
-                  right: BorderSide(
-                    color: colors.outlineVariant.withValues(alpha: .4),
-                  ),
+          Container(
+            width: 214,
+            decoration: BoxDecoration(
+              border: Border(
+                right: BorderSide(
+                  color: colors.outlineVariant.withValues(alpha: .4),
                 ),
               ),
-              child: SafeArea(
-                child: LayoutBuilder(
-                  builder: (context, constraints) => SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                      ),
-                      child: IntrinsicHeight(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
+            ),
+            child: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          DragToMoveArea(
+                            child: Padding(
                               padding: const EdgeInsets.fromLTRB(
                                 24,
                                 30,
@@ -137,110 +224,110 @@ class _HomeState extends State<Home> {
                                 ],
                               ),
                             ),
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(24, 0, 0, 12),
-                              child: Text(
-                                'YOUR WORKSPACE',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 1.4,
-                                  color: Colors.grey,
-                                ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(24, 0, 0, 12),
+                            child: Text(
+                              'YOUR WORKSPACE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.4,
+                                color: Colors.grey,
                               ),
                             ),
-                            for (var i = 0; i < labels.length; i++) ...[
-                              if (i == 6)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: 22,
-                                    vertical: 15,
-                                  ),
-                                  child: Divider(),
+                          ),
+                          for (var i = 0; i < labels.length; i++) ...[
+                            if (i == 6)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 22,
+                                  vertical: 15,
                                 ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 3,
-                                ),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: ListTile(
-                                    dense: true,
-                                    minLeadingWidth: 22,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    selected: page == i,
-                                    selectedColor: beamBlue,
-                                    selectedTileColor: beamBlue.withValues(
-                                      alpha: .09,
-                                    ),
-                                    leading: Icon(icons[i], size: 21),
-                                    title: Text(
-                                      labels[i],
-                                      style: TextStyle(
-                                        fontWeight: page == i
-                                            ? FontWeight.w600
-                                            : FontWeight.w400,
-                                      ),
-                                    ),
-                                    onTap: () => navigate(i),
-                                  ),
-                                ),
+                                child: Divider(),
                               ),
-                            ],
-                            const Spacer(),
                             Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.lock_outline_rounded,
-                                        size: 14,
-                                        color: colors.onSurfaceVariant,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Flexible(
-                                        child: Text(
-                                          'Private. Local. Yours.',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: colors.onSurfaceVariant,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 3,
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: ListTile(
+                                  dense: true,
+                                  minLeadingWidth: 22,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    'DESKTOP PREVIEW · 2.0',
+                                  selected: page == i,
+                                  selectedColor: beamBlue,
+                                  selectedTileColor: beamBlue.withValues(
+                                    alpha: .09,
+                                  ),
+                                  leading: Icon(icons[i], size: 21),
+                                  title: Text(
+                                    labels[i],
                                     style: TextStyle(
-                                      fontSize: 9,
-                                      color: Colors.grey,
-                                      letterSpacing: 1.2,
+                                      fontWeight: page == i
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
                                     ),
                                   ),
-                                ],
+                                  onTap: () => navigate(i),
+                                ),
                               ),
                             ),
                           ],
-                        ),
+                          const Spacer(),
+                          Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.lock_outline_rounded,
+                                      size: 14,
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        'Private. Local. Yours.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: colors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'DESKTOP PREVIEW · 2.0',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.grey,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
             ),
+          ),
           Expanded(
             child: Column(
               children: [
                 Container(
-                  height: 76,
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  height: 48,
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
@@ -250,70 +337,120 @@ class _HomeState extends State<Home> {
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.smartphone_rounded,
-                        color: store.ready ? beamBlue : colors.onSurfaceVariant,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      if (store.devices.isEmpty)
-                        Text(
-                          'No device connected',
-                          style: TextStyle(color: colors.onSurfaceVariant),
-                        )
-                      else
-                        Expanded(
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value:
-                                  store.devices.any(
-                                    (d) => d.serial == store.selected,
-                                  )
-                                  ? store.selected
-                                  : null,
-                              isExpanded: true,
-                              hint: const Text('Select a device'),
-                              items: store.devices
-                                  .map(
-                                    (d) => DropdownMenuItem(
-                                      value: d.serial,
-                                      child: Text(
-                                        '${d.label} · ${d.ready ? (d.wireless ? 'Wi-Fi' : 'USB') : d.state}',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                      Expanded(
+                        child: DragToMoveArea(
+                          child: Container(
+                            color: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.smartphone_rounded,
+                                  color: store.ready
+                                      ? beamBlue
+                                      : colors.onSurfaceVariant,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                if (store.devices.isEmpty)
+                                  Text(
+                                    'No device connected',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: colors.onSurfaceVariant,
                                     ),
                                   )
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) store.select(v);
-                              },
+                                else
+                                  Flexible(
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value:
+                                            store.devices.any(
+                                              (d) => d.serial == store.selected,
+                                            )
+                                            ? store.selected
+                                            : null,
+                                        isExpanded: true,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: colors.onSurface,
+                                        ),
+                                        hint: const Text(
+                                          'Select a device',
+                                          style: TextStyle(fontSize: 13),
+                                        ),
+                                        items: store.devices
+                                            .map(
+                                              (d) => DropdownMenuItem(
+                                                value: d.serial,
+                                                child: Text(
+                                                  '${d.label} · ${d.ready ? (d.wireless ? 'Wi-Fi' : 'USB') : d.state}',
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (v) {
+                                          if (v != null) store.select(v);
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(width: 8),
+                                if (store.scanning)
+                                  const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                IconButton(
+                                  tooltip: 'Refresh devices',
+                                  iconSize: 18,
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: store.scanning
+                                      ? null
+                                      : store.refresh,
+                                  icon: const Icon(Icons.refresh_rounded),
+                                ),
+                                const SizedBox(width: 6),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                  ),
+                                  onPressed: pair,
+                                  icon: const Icon(Icons.add_rounded, size: 16),
+                                  label: const Text(
+                                    'Connect device',
+                                    style: TextStyle(fontSize: 12.5),
+                                  ),
+                                ),
+                                const Spacer(),
+                              ],
                             ),
                           ),
                         ),
-                      if (store.devices.isEmpty) const Spacer(),
-                      if (store.scanning)
-                        const SizedBox(
-                          width: 15,
-                          height: 15,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      IconButton(
-                        tooltip: 'Refresh devices',
-                        onPressed: store.scanning ? null : store.refresh,
-                        icon: const Icon(Icons.refresh_rounded, size: 20),
+                      ),
+                      const SizedBox(width: 8),
+                      WindowControls(
+                        onClose: () async {
+                          await widget.store.shutdown();
+                          await windowManager.destroy();
+                          exit(0);
+                        },
                       ),
                       const SizedBox(width: 12),
-                      FilledButton.icon(
-                        onPressed: pair,
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('Connect device'),
-                      ),
                     ],
                   ),
                 ),
                 if (store.startupError != null)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(28, 16, 28, 0),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                     child: Notice(
                       store.startupError!,
                       error: true,
@@ -325,7 +462,7 @@ class _HomeState extends State<Home> {
                   ),
                 if (failure != null)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(28, 12, 28, 0),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                     child: Notice(
                       '${failure.title} failed. ${failure.detail.split('\n').first}',
                       error: true,
@@ -348,7 +485,7 @@ class _HomeState extends State<Home> {
                   ),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.all(28),
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     child: IndexedStack(
                       index: page,
                       children: [
@@ -476,6 +613,35 @@ class _HomeState extends State<Home> {
             ],
           ),
         ),
+        for (final mirror in store.mirrors.values.where((m) => m.open)) ...[
+          const SizedBox(height: 18),
+          Panel(
+            child: ListTile(
+              leading: Icon(
+                Icons.screen_share_rounded,
+                color: mirror.status == 'Live' ? Colors.green : Colors.orange,
+              ),
+              title: Text(
+                mirror.status == 'Live'
+                    ? 'Screen is being mirrored'
+                    : 'Screen mirror · ${mirror.status}',
+              ),
+              subtitle: Text(
+                '${store.devices.where((d) => d.serial == mirror.device).firstOrNull?.label ?? mirror.device} · Separate window${mirror.detail.isEmpty ? '' : '\n${mirror.detail}'}',
+              ),
+              trailing: Wrap(
+                spacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => mirror.command('focus'),
+                    child: const Text('Show window'),
+                  ),
+                  TextButton(onPressed: mirror.stop, child: const Text('Stop')),
+                ],
+              ),
+            ),
+          ),
+        ],
         if (store.sessions.values.any((s) => s.active)) ...[
           const SizedBox(height: 18),
           Panel(

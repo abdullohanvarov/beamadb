@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
@@ -16,14 +17,35 @@ Future<void> main(List<String> args) async {
     mediaError = 'Native media runtime is unavailable: $e';
   }
   await windowManager.ensureInitialized();
+  final isSession = args.contains('--session');
+  final isScreen = isSession && args.length >= 3 && args[2] == 'screen';
+  final windowSize = isScreen
+      ? const Size(460, 890)
+      : isSession
+      ? const Size(600, 750)
+      : const Size(1240, 820);
+  final minSize = isScreen
+      ? const Size(320, 520)
+      : isSession
+      ? const Size(400, 400)
+      : const Size(900, 620);
+  final windowTitle = isScreen
+      ? 'BeamADB · Phone Mirror'
+      : isSession
+      ? 'BeamADB · Stream'
+      : 'BeamADB';
+
   await windowManager.waitUntilReadyToShow(
-    const WindowOptions(
-      size: Size(1240, 820),
-      minimumSize: Size(900, 620),
+    WindowOptions(
+      size: windowSize,
+      minimumSize: minSize,
       center: true,
-      title: 'BeamADB',
+      title: windowTitle,
+      titleBarStyle: TitleBarStyle.hidden,
     ),
     () async {
+      await windowManager.setAsFrameless();
+      await windowManager.setResizable(true);
       await windowManager.show();
       await windowManager.focus();
     },
@@ -31,6 +53,18 @@ Future<void> main(List<String> args) async {
   final store = AppStore();
   runApp(BeamApp(store: store, mediaError: mediaError, args: args));
   unawaited(store.initialize());
+  if (isScreen) {
+    stdin.transform(utf8.decoder).transform(const LineSplitter()).listen((
+      command,
+    ) async {
+      if (command == 'stop') await windowManager.close();
+      if (command == 'focus') {
+        await windowManager.restore();
+        await windowManager.show();
+        await windowManager.focus();
+      }
+    });
+  }
 }
 
 class BeamApp extends StatefulWidget {
