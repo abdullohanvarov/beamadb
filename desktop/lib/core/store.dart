@@ -5,7 +5,22 @@ import 'mirror_window.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'adb.dart';
+import 'friendly_error.dart';
 import 'media_session.dart';
+
+class LinkSetupProgress {
+  final int step;
+  final String status;
+  final bool isDone;
+  final String? error;
+
+  const LinkSetupProgress({
+    required this.step,
+    required this.status,
+    this.isDone = false,
+    this.error,
+  });
+}
 
 class Activity {
   final String title;
@@ -91,12 +106,23 @@ class AppStore extends ChangeNotifier {
   }
 
   final Map<String, String> linkSetup = {};
+  final Map<String, LinkSetupProgress> linkProgress = {};
   final Set<String> _onboarding = {};
   final Map<String, DateTime> _removalAttempts = {};
-  bool get autoSetup => preferences?.getBool('autoSetup') ?? true;
+  bool get autoSetup => preferences?.getBool('autoSetup') ?? false;
   Future<void> setAutoSetup(bool value) async {
     await preferences?.setBool('autoSetup', value);
     emit();
+  }
+
+  bool isPhoneLinked(PhoneSummary phone) {
+    if (phone.connections.any((d) => d.relay)) return true;
+    for (final entry in phoneRoutes.entries) {
+      if (entry.key.startsWith('127.0.0.1:') && entry.value == phone.id) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void markInternetVerified(String serial) {
@@ -112,7 +138,11 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  Future<void> setupPhone(String serial, {bool retry = false}) async {
+  Future<void> setupPhone(
+    String serial, {
+    bool retry = false,
+    void Function(LinkSetupProgress)? onProgress,
+  }) async {
     if (serial.startsWith('127.0.0.1:') || _onboarding.contains(serial)) return;
     if (!retry && linkSetup.containsKey(serial)) {
       if (!removedPhones.containsKey(phoneRoutes[serial])) return;
@@ -124,38 +154,119 @@ class AppStore extends ChangeNotifier {
     if (removedPhones.containsKey(phoneRoutes[serial])) {
       _removalAttempts[serial] = DateTime.now();
     }
-    final script = File(
-      '${File(Platform.resolvedExecutable).parent.path}/remote/onboard.py',
-    );
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    var script = File('$exeDir/remote/onboard.py');
+    if (!await script.exists()) {
+      script = File('remote/onboard.py');
+    }
     final root =
         Platform.environment['XDG_CONFIG_HOME'] ??
         '${Platform.environment['HOME']}/.config';
     if (!await script.exists() ||
         !await File('$root/beamadb-link/invite.json').exists()) {
+      const msg = 'Relay not configured. Set up in Connect device → Remote.';
+      linkSetup[serial] = msg;
+      final prog = const LinkSetupProgress(
+        step: 1,
+        status: msg,
+        error: msg,
+      );
+      linkProgress[serial] = prog;
+      onProgress?.call(prog);
+      emit();
       return;
     }
     _onboarding.add(serial);
-    linkSetup[serial] = 'Setting up internet access…';
+    linkSetup[serial] = 'Starting permanent Link setup…';
+    final initialProg = const LinkSetupProgress(
+      step: 1,
+      status: 'Checking device connection & authorization…',
+    );
+    linkProgress[serial] = initialProg;
+    onProgress?.call(initialProg);
     emit();
+
     try {
-      final result = await Process.run('python3', [
+      final process = await Process.start('python3', [
         script.path,
         '--serial',
         serial,
         '--adb',
         adb.executable,
       ]);
+
+      String lastOutput = '';
+      String errorOutput = '';
+
+      process.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((err) => errorOutput += '$err\n');
+
+      await for (final line in process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        lastOutput = line;
+        if (line.startsWith('STEP:')) {
+          final parts = line.split(':');
+          final step = int.tryParse(parts[1]) ?? 1;
+          final msg = parts.sublist(2).join(':');
+          final prog = LinkSetupProgress(step: step, status: msg);
+          linkProgress[serial] = prog;
+          linkSetup[serial] = msg;
+          onProgress?.call(prog);
+          emit();
+        } else if (line.startsWith('DONE:')) {
+          final msg = line.substring(5);
+          final prog = LinkSetupProgress(step: 6, status: msg, isDone: true);
+          linkProgress[serial] = prog;
+          linkSetup[serial] = 'Internet connection verified';
+          onProgress?.call(prog);
+          emit();
+        }
+      }
+
+      final exitCode = await process.exitCode;
       final removedId = phoneRoutes[serial];
       if (removedPhones.containsKey(removedId)) {
-        removedPhones[removedId!] = '${result.stdout}'.trim();
+        removedPhones[removedId!] = lastOutput.trim();
         await savePhones();
       }
-      linkSetup[serial] = result.exitCode == 0
-          ? 'Internet access configured'
-          : '${result.stdout}'.trim();
-    } catch (_) {
-      linkSetup[serial] =
-          'Setup needs attention. Retry from Connect device → Remote.';
+
+      if (exitCode == 0) {
+        linkSetup[serial] = 'Internet connection verified';
+        final prog = const LinkSetupProgress(
+          step: 6,
+          status: 'Permanent Link is active!',
+          isDone: true,
+        );
+        linkProgress[serial] = prog;
+        onProgress?.call(prog);
+        await refresh();
+      } else {
+        final errText = errorOutput.trim().isNotEmpty
+            ? errorOutput
+            : (lastOutput.trim().isNotEmpty ? lastOutput : 'Setup failed');
+        final friendly = FriendlyError.parse(errText, 'Link Setup Incomplete');
+        final prog = LinkSetupProgress(
+          step: linkProgress[serial]?.step ?? 1,
+          status: friendly.description,
+          error: friendly.summary,
+        );
+        linkProgress[serial] = prog;
+        linkSetup[serial] = friendly.description;
+        onProgress?.call(prog);
+      }
+    } catch (e) {
+      final friendly = FriendlyError.parse(e, 'Link Setup Error');
+      final prog = LinkSetupProgress(
+        step: 1,
+        status: friendly.description,
+        error: friendly.summary,
+      );
+      linkProgress[serial] = prog;
+      linkSetup[serial] = friendly.description;
+      onProgress?.call(prog);
     } finally {
       _onboarding.remove(serial);
       emit();

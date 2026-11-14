@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import '../core/friendly_error.dart';
 import '../core/store.dart';
 import '../core/theme.dart';
 import 'widgets.dart';
@@ -465,24 +466,38 @@ class _HomeState extends State<Home> {
                 if (failure != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                    child: Notice(
-                      '${failure.title} failed. ${failure.detail.split('\n').first}',
-                      error: true,
-                      action: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton(
-                            onPressed: () => navigate(7),
-                            child: const Text('Details'),
+                    child: Builder(
+                      builder: (context) {
+                        final friendly = FriendlyError.parse(
+                          failure.detail,
+                          failure.title,
+                        );
+                        return Notice(
+                          '${failure.title}: ${friendly.description}',
+                          error: true,
+                          action: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () => showDialog<void>(
+                                  context: context,
+                                  builder: (context) => FriendlyErrorDialog(
+                                    title: failure.title,
+                                    detail: failure.detail,
+                                  ),
+                                ),
+                                child: const Text('Details'),
+                              ),
+                              IconButton(
+                                tooltip: 'Dismiss failure',
+                                onPressed: () =>
+                                    setState(() => dismissedFailures.add(failure)),
+                                icon: const Icon(Icons.close, size: 18),
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            tooltip: 'Dismiss failure',
-                            onPressed: () =>
-                                setState(() => dismissedFailures.add(failure)),
-                            icon: const Icon(Icons.close, size: 18),
-                          ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
                   ),
                 Expanded(
@@ -905,6 +920,28 @@ class _HomeState extends State<Home> {
                     ),
                 ],
               ),
+              if (!store.isPhoneLinked(phone) && phone.online)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                    ),
+                    icon: const Icon(Icons.cloud_sync_outlined, size: 16),
+                    label: const Text('Connect permanently with Link app'),
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (context) => LinkSetupDialog(
+                        store: store,
+                        phone: phone,
+                      ),
+                    ),
+                  ),
+                ),
               if (statuses.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -917,11 +954,26 @@ class _HomeState extends State<Home> {
                   ),
                 ),
               if (phone.connections.any((d) => d.state == 'unauthorized'))
-                const Text('Unlock phone and approve debugging'),
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock_outline_rounded, size: 15, color: Colors.orange),
+                      SizedBox(width: 6),
+                      Text(
+                        'Unlock phone & approve debugging',
+                        style: TextStyle(fontSize: 12, color: Colors.orange),
+                      ),
+                    ],
+                  ),
+                ),
               if (!phone.online && phone.lastSeen != null)
-                Text(
-                  'Last seen ${DateTime.tryParse(phone.lastSeen!)?.toLocal().toString().split('.').first ?? phone.lastSeen}',
-                  style: const TextStyle(fontSize: 12),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Last seen ${DateTime.tryParse(phone.lastSeen!)?.toLocal().toString().split('.').first ?? phone.lastSeen}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ),
             ],
           ),
@@ -1012,11 +1064,103 @@ class _HomeState extends State<Home> {
                       children: [
                         Padding(
                           padding: const EdgeInsets.all(16),
-                          child: SelectableText(
-                            a.detail.isEmpty
-                                ? 'No additional details.'
-                                : a.detail,
-                          ),
+                          child: a.state == 'Failed' && a.detail.isNotEmpty
+                              ? Builder(
+                                  builder: (context) {
+                                    final friendly = FriendlyError.parse(
+                                      a.detail,
+                                      a.title,
+                                    );
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          friendly.description,
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        if (friendly.suggestion != null) ...[
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .secondaryContainer
+                                                  .withValues(alpha: 0.35),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Icon(
+                                                  Icons
+                                                      .lightbulb_outline_rounded,
+                                                  size: 16,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    friendly.suggestion!,
+                                                    style: const TextStyle(
+                                                      fontSize: 12.5,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                        if (friendly.raw.isNotEmpty) ...[
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            'Technical details:',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHighest
+                                                  .withValues(alpha: 0.5),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: SelectableText(
+                                              friendly.raw,
+                                              style: const TextStyle(
+                                                fontFamily: 'monospace',
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    );
+                                  },
+                                )
+                              : SelectableText(
+                                  a.detail.isEmpty
+                                      ? 'No additional details.'
+                                      : a.detail,
+                                ),
                         ),
                       ],
                     ),
@@ -1138,4 +1282,264 @@ class _HomeState extends State<Home> {
       ),
     ],
   );
+}
+
+class LinkSetupDialog extends StatefulWidget {
+  final AppStore store;
+  final PhoneSummary phone;
+
+  const LinkSetupDialog({
+    super.key,
+    required this.store,
+    required this.phone,
+  });
+
+  @override
+  State<LinkSetupDialog> createState() => _LinkSetupDialogState();
+}
+
+class _LinkSetupDialogState extends State<LinkSetupDialog> {
+  int currentStep = 1;
+  String currentStatus = 'Ready to set up';
+  bool isRunning = false;
+  bool isComplete = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    startSetup();
+  }
+
+  Future<void> startSetup() async {
+    final route = widget.phone.connections
+            .where((d) => d.ready && !d.relay)
+            .firstOrNull ??
+        widget.phone.connections.firstOrNull;
+    if (route == null) {
+      setState(() {
+        error = 'Phone is not ready. Please connect via USB or local network first.';
+      });
+      return;
+    }
+
+    setState(() {
+      isRunning = true;
+      error = null;
+      isComplete = false;
+      currentStep = 1;
+      currentStatus = 'Connecting to phone…';
+    });
+
+    await widget.store.setupPhone(
+      route.serial,
+      retry: true,
+      onProgress: (prog) {
+        if (!mounted) return;
+        setState(() {
+          currentStep = prog.step;
+          currentStatus = prog.status;
+          if (prog.error != null) {
+            error = prog.error;
+            isRunning = false;
+          }
+          if (prog.isDone) {
+            isComplete = true;
+            isRunning = false;
+          }
+        });
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final steps = [
+      ('Device connection & authorization', Icons.security_rounded),
+      ('Relay channel allocation', Icons.dns_rounded),
+      ('Install companion app (BeamADB Link)', Icons.system_update_rounded),
+      ('Configure secure credentials', Icons.vpn_key_rounded),
+      ('Start phone link service', Icons.play_circle_outline_rounded),
+      ('Permanent Link ready', Icons.check_circle_rounded),
+    ];
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colors.primaryContainer.withValues(alpha: 0.5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.cloud_sync_rounded, color: colors.primary, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Set Up Permanent Link',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  widget.phone.name,
+                  style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'BeamADB Link keeps this phone connected anywhere via your VPS relay, seamlessly switching between Wi-Fi and mobile data.',
+                style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 18),
+              for (var i = 0; i < steps.length; i++) ...[
+                Builder(
+                  builder: (context) {
+                    final stepIndex = i + 1;
+                    final isStepDone = isComplete || currentStep > stepIndex;
+                    final isStepActive = isRunning && currentStep == stepIndex;
+                    final isStepFailed = error != null && currentStep == stepIndex;
+
+                    Color iconColor = colors.onSurfaceVariant.withValues(alpha: 0.4);
+                    Widget statusWidget = Icon(steps[i].$2, size: 18, color: iconColor);
+
+                    if (isStepDone) {
+                      statusWidget = const Icon(
+                        Icons.check_circle_rounded,
+                        size: 18,
+                        color: Colors.green,
+                      );
+                    } else if (isStepFailed) {
+                      statusWidget = Icon(
+                        Icons.error_outline_rounded,
+                        size: 18,
+                        color: colors.error,
+                      );
+                    } else if (isStepActive) {
+                      statusWidget = const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      );
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          SizedBox(width: 24, child: statusWidget),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              steps[i].$1,
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: isStepActive || isStepDone
+                                    ? FontWeight.w500
+                                    : FontWeight.normal,
+                                color: isStepActive || isStepDone
+                                    ? colors.onSurface
+                                    : colors.onSurfaceVariant.withValues(alpha: 0.6),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+              if (error != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colors.errorContainer.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: colors.error.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline_rounded, color: colors.error, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          error!,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: colors.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (isComplete) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.green.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.verified_rounded, color: Colors.green, size: 20),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Setup successful! Your phone is now paired and reachable from anywhere.',
+                          style: TextStyle(fontSize: 12.5, color: Colors.green),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (!isComplete && !isRunning)
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        if (error != null && !isRunning)
+          FilledButton.icon(
+            onPressed: startSetup,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Retry'),
+          ),
+        if (isComplete)
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+      ],
+    );
+  }
 }

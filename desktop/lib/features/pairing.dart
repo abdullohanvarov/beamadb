@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:qr/qr.dart';
 import '../core/adb.dart';
+import '../core/friendly_error.dart';
 import '../core/store.dart';
 import 'widgets.dart';
 
@@ -68,7 +69,11 @@ class _PairingDialogState extends State<PairingDialog> {
         await doPair(match.address, secret, token: token);
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) {
+        setState(
+          () => error = FriendlyError.parse(e, 'Pairing Failed').summary,
+        );
+      }
     }
   }
 
@@ -112,8 +117,7 @@ class _PairingDialogState extends State<PairingDialog> {
     } catch (e) {
       if (mounted) {
         setState(
-          () =>
-              error = e is BeamException ? '${e.message}\n${e.details}' : '$e',
+          () => error = FriendlyError.parse(e, 'Pairing Failed').summary,
         );
       }
     } finally {
@@ -158,7 +162,11 @@ class _PairingDialogState extends State<PairingDialog> {
                   }),
           ),
           const SizedBox(height: 20),
-          if (error != null) Notice(error!, error: true),
+          if (error != null)
+            Notice(
+              FriendlyError.parse(error, 'Connection Error').summary,
+              error: true,
+            ),
           Expanded(
             child: SingleChildScrollView(
               child: method == 0
@@ -316,7 +324,14 @@ class _PairingDialogState extends State<PairingDialog> {
                                         Navigator.pop(context);
                                       }
                                     } catch (e) {
-                                      if (mounted) setState(() => error = '$e');
+                                      if (mounted) {
+                                        setState(
+                                          () => error = FriendlyError.parse(
+                                            e,
+                                            'Connection Failed',
+                                          ).summary,
+                                        );
+                                      }
                                     } finally {
                                       if (mounted) setState(() => busy = false);
                                     }

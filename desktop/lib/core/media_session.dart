@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'adb.dart';
+import 'friendly_error.dart';
 
 /// Scrcpy raw H.264/PCM transport. libmpv decodes on native threads and the
 /// media_kit texture bridge renders without copying frames through Dart.
@@ -22,6 +23,7 @@ class MediaSession extends ChangeNotifier {
   ServerSocket? _relay;
   int? _forwardPort;
   int cameraRotation = 0;
+  String cameraFacing = 'back';
   bool cameraAudio = false;
   bool cameraAudioMuted = false;
   Player? audioPlayer;
@@ -50,6 +52,7 @@ class MediaSession extends ChangeNotifier {
     bool cameraAudio = true,
   }) async {
     if (active || _closing) return;
+    cameraFacing = camera;
     this.cameraRotation = cameraRotation;
     this.cameraAudio = cameraAudio;
     cameraAudioMuted = false;
@@ -356,10 +359,13 @@ class MediaSession extends ChangeNotifier {
       final logs = detail;
       await stop();
       status = 'Failed';
-      detail =
-          '${e is TimeoutException ? 'No media arrived. Check the device and capture permissions.' : e}\n$logs';
+      final friendly = FriendlyError.parse(
+        logs.isNotEmpty ? logs : '$e',
+        'Could not start $mode streaming',
+      );
+      detail = '${friendly.summary}\n$logs'.trim();
       emit();
-      throw BeamException('Could not start $mode streaming.', detail);
+      throw BeamException(friendly.summary, logs);
     }
   }
 
@@ -456,6 +462,16 @@ class MediaSession extends ChangeNotifier {
   Future<void> setCameraAudioMuted(bool value) async {
     cameraAudioMuted = value;
     await audioPlayer?.setVolume(value ? 0 : 100);
+    emit();
+  }
+
+  Future<void> setCameraFacing(String facing) async {
+    cameraFacing = facing;
+    emit();
+  }
+
+  Future<void> switchCameraFacing() async {
+    cameraFacing = cameraFacing == 'front' ? 'back' : 'front';
     emit();
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import '../core/friendly_error.dart';
 import '../core/store.dart';
 
 class PageHeading extends StatelessWidget {
@@ -224,30 +225,200 @@ Future<String?> askText(
   return result;
 }
 
+class FriendlyErrorDialog extends StatefulWidget {
+  final String title;
+  final String detail;
+
+  const FriendlyErrorDialog({
+    super.key,
+    required this.title,
+    required this.detail,
+  });
+
+  @override
+  State<FriendlyErrorDialog> createState() => _FriendlyErrorDialogState();
+}
+
+class _FriendlyErrorDialogState extends State<FriendlyErrorDialog> {
+  bool showTechnical = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final friendly = FriendlyError.parse(widget.detail, widget.title);
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colors.errorContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.error_outline_rounded,
+              color: colors.error,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  friendly.title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  widget.title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                friendly.description,
+                style: const TextStyle(fontSize: 14, height: 1.4),
+              ),
+              if (friendly.suggestion != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colors.secondaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: colors.outlineVariant.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.lightbulb_outline_rounded,
+                        color: colors.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          friendly.suggestion!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colors.onSurface,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (friendly.raw.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => setState(() => showTechnical = !showTechnical),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          showTechnical
+                              ? Icons.keyboard_arrow_down_rounded
+                              : Icons.keyboard_arrow_right_rounded,
+                          size: 18,
+                          color: colors.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          showTechnical
+                              ? 'Hide technical details'
+                              : 'Show technical details',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (showTechnical) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        friendly.raw,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11.5,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Dismiss'),
+        ),
+      ],
+    );
+  }
+}
+
 Future<void> showResult(BuildContext context, AppStore store) async {
   if (!context.mounted || store.activities.isEmpty) return;
   final activity = store.activities.first;
   if (activity.state == 'Failed') {
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(activity.title),
-        content: SizedBox(
-          width: 550,
-          child: SingleChildScrollView(child: SelectableText(activity.detail)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+      builder: (context) => FriendlyErrorDialog(
+        title: activity.title,
+        detail: activity.detail,
       ),
     );
   } else {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${activity.title}: ${activity.state.toLowerCase()}'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }

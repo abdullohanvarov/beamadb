@@ -9,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 import '../core/adb.dart';
+import '../core/friendly_error.dart';
 import '../core/media_session.dart';
 import '../core/store.dart';
 import '../core/recordings.dart';
@@ -192,6 +193,23 @@ class _MediaPageState extends State<MediaPage> {
     await session?.stop();
   }
 
+  bool switchingCamera = false;
+  Future<void> switchCamera() async {
+    if (switchingCamera) return;
+    switchingCamera = true;
+    final next = camera == 'front' ? 'back' : 'front';
+    setState(() => camera = next);
+    if (session?.active == true) {
+      final wasLive = session?.status == 'Live';
+      await stopStream();
+      if (wasLive && mounted) {
+        await start(quiet: true);
+      }
+    }
+    switchingCamera = false;
+    if (mounted) setState(() {});
+  }
+
   Future<void> detached() async {
     final device = widget.store.device;
     if (device == null) return;
@@ -365,15 +383,40 @@ class _MediaPageState extends State<MediaPage> {
                                 ),
                                 if (session?.detail.isNotEmpty == true) ...[
                                   const SizedBox(height: 8),
-                                  Text(
-                                    session!.detail,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: colors.error,
-                                    ),
+                                  Builder(
+                                    builder: (context) {
+                                      final friendly = FriendlyError.parse(
+                                        session!.detail,
+                                      );
+                                      return Column(
+                                        children: [
+                                          Text(
+                                            friendly.description,
+                                            textAlign: TextAlign.center,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                              color: colors.error,
+                                            ),
+                                          ),
+                                          if (friendly.suggestion != null) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              friendly.suggestion!,
+                                              textAlign: TextAlign.center,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                color: colors.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      );
+                                    },
                                   ),
                                 ],
                                 const SizedBox(height: 16),
@@ -630,6 +673,17 @@ class _MediaPageState extends State<MediaPage> {
           actions: [
             if (active && widget.mode == 'camera') ...[
               IconButton(
+                tooltip: camera == 'front'
+                    ? 'Switch to Back camera'
+                    : 'Switch to Front camera',
+                icon: Icon(
+                  camera == 'front'
+                      ? Icons.camera_rear_rounded
+                      : Icons.camera_front_rounded,
+                ),
+                onPressed: switchCamera,
+              ),
+              IconButton(
                 tooltip: 'Rotate camera 90°',
                 icon: const Icon(Icons.rotate_90_degrees_cw_rounded),
                 onPressed: () {
@@ -702,8 +756,8 @@ class _MediaPageState extends State<MediaPage> {
         if (session?.status == 'Failed' || session?.status == 'Disconnected')
           Notice(
             session!.detail.isEmpty
-                ? 'The stream disconnected. Stop and start to reconnect.'
-                : session!.detail,
+                ? 'The stream disconnected. Tap Start to reconnect.'
+                : FriendlyError.parse(session!.detail, 'Stream Interrupted').summary,
             error: true,
           ),
         if (!active)
@@ -808,7 +862,7 @@ class _MediaPageState extends State<MediaPage> {
                                 : 'Screen mirror · ${mirror.status}')
                           : 'Screen mirror · ${mirror.status}',
                       mirror.detail.isNotEmpty
-                          ? mirror.detail
+                          ? FriendlyError.parse(mirror.detail, 'Screen Mirror').description
                           : mirror.open
                           ? 'Your phone screen is open in a separate window.'
                           : 'Start Screen to open a new mirror window.',
@@ -881,6 +935,27 @@ class _MediaPageState extends State<MediaPage> {
                             ),
                           ),
                         ),
+                        if (widget.mode == 'camera' && active)
+                          Positioned(
+                            right: 16,
+                            top: 16,
+                            child: Material(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(20),
+                              child: IconButton(
+                                tooltip: camera == 'front'
+                                    ? 'Switch to Back camera'
+                                    : 'Switch to Front camera',
+                                icon: Icon(
+                                  camera == 'front'
+                                      ? Icons.camera_rear_rounded
+                                      : Icons.camera_front_rounded,
+                                  color: Colors.white,
+                                ),
+                                onPressed: switchCamera,
+                              ),
+                            ),
+                          ),
                       ],
                     )
                   : EmptyState(
@@ -930,6 +1005,21 @@ class _MediaPageState extends State<MediaPage> {
                   ),
                 ],
                 if (widget.mode == 'camera') ...[
+                  FilledButton.tonalIcon(
+                    onPressed: switchCamera,
+                    icon: Icon(
+                      camera == 'front'
+                          ? Icons.camera_rear_rounded
+                          : Icons.camera_front_rounded,
+                      size: 18,
+                    ),
+                    label: Text(
+                      camera == 'front'
+                          ? 'Switch to Back'
+                          : 'Switch to Front',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   OutlinedButton.icon(
                     onPressed: () async {
                       await session?.rotateCamera();

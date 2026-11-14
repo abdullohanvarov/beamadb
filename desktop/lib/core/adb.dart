@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'friendly_error.dart';
 
 class BeamException implements Exception {
   final String message;
@@ -371,24 +372,8 @@ void validateAddress(String address) {
 }
 
 BeamException explainError(String detail, int code) {
-  final lower = detail.toLowerCase();
-  String message =
-      'The operation failed (exit $code). Review the details and retry.';
-  if (lower.contains('unauthorized')) {
-    message = 'Unlock your phone and approve USB debugging.';
-  } else if (lower.contains('offline') ||
-      lower.contains('no devices') ||
-      lower.contains('not found')) {
-    message = 'The device is unavailable. Reconnect it and try again.';
-  } else if (lower.contains('permission denied')) {
-    message = 'Android denied access to this location or operation.';
-  } else if (lower.contains('no space left')) {
-    message = 'Storage is full. Free some space and retry.';
-  } else if (lower.contains('install_failed')) {
-    message =
-        'Android could not install this app. See the installation reason below.';
-  }
-  return BeamException(message, detail);
+  final friendly = FriendlyError.parse(detail);
+  return BeamException(friendly.summary, detail);
 }
 
 void validateCommandResult(List<String> args, String output) {
