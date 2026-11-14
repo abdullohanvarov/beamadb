@@ -1,6 +1,9 @@
 #include "my_application.h"
 
 #include <flutter_linux/flutter_linux.h>
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
 #endif
@@ -53,6 +56,16 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1240, 820);
+  gtk_window_set_title(window, "BeamADB");
+  gtk_window_set_icon_name(window, "beamadb");
+  // Match beamadb.desktop on Wayland as well as X11.
+  gtk_widget_realize(GTK_WIDGET(window));
+#ifdef GDK_WINDOWING_WAYLAND
+  GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(window));
+  if (GDK_IS_WAYLAND_WINDOW(gdk_window)) {
+    gdk_wayland_window_set_application_id(gdk_window, "beamadb");
+  }
+#endif
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
@@ -136,11 +149,10 @@ static void my_application_class_init(MyApplicationClass* klass) {
 static void my_application_init(MyApplication* self) {}
 
 MyApplication* my_application_new() {
-  // Set the program name to the application ID, which helps various systems
-  // like GTK and desktop environments map this running application to its
-  // corresponding .desktop file. This ensures better integration by allowing
-  // the application to be recognized beyond its binary name.
-  g_set_prgname(APPLICATION_ID);
+  // Keep the desktop identity aligned with beamadb.desktop on X11/Wayland.
+  g_set_prgname("beamadb");
+  g_set_application_name("BeamADB");
+  gtk_window_set_default_icon_name("beamadb");
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",

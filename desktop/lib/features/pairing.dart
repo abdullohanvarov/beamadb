@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'remote_link.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:qr/qr.dart';
@@ -139,11 +141,13 @@ class _PairingDialogState extends State<PairingDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 0, label: Text('QR code')),
-              ButtonSegment(value: 1, label: Text('Pairing code')),
-              ButtonSegment(value: 2, label: Text('Direct')),
-              ButtonSegment(value: 3, label: Text('USB')),
+            segments: [
+              const ButtonSegment(value: 0, label: Text('QR code')),
+              const ButtonSegment(value: 1, label: Text('Pairing code')),
+              const ButtonSegment(value: 2, label: Text('Direct')),
+              const ButtonSegment(value: 3, label: Text('USB')),
+              if (Platform.isLinux)
+                const ButtonSegment(value: 4, label: Text('Remote')),
             ],
             selected: {method},
             onSelectionChanged: busy
@@ -182,6 +186,8 @@ class _PairingDialogState extends State<PairingDialog> {
                         ),
                       ],
                     )
+                  : method == 4
+                  ? RemoteLink(store: widget.store)
                   : method == 3
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

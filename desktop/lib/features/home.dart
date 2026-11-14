@@ -69,7 +69,9 @@ class _HomeState extends State<Home> {
   @override
   void didUpdateWidget(covariant Home oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (detached && widget.args.length >= 3) {
+    if (detached &&
+        widget.args.length >= 3 &&
+        (oldWidget.args.length < 2 || oldWidget.args[1] != widget.args[1])) {
       store.selected = widget.args[1];
       page = switch (widget.args[2]) {
         'camera' => 3,
@@ -147,7 +149,7 @@ class _HomeState extends State<Home> {
               ),
             Expanded(
               child: MediaPage(
-                key: ValueKey('detached-$page-${store.selected}'),
+                key: ValueKey('detached-$page-${widget.args[1]}'),
                 store: store,
                 mode: page == 3 ? 'camera' : (page == 4 ? 'audio' : 'screen'),
                 runtimeError: widget.mediaError,
@@ -543,9 +545,31 @@ class _HomeState extends State<Home> {
     return ListView(
       children: [
         PageHeading(
-          'Your phone. More possibilities.',
-          'A little distance. The same connection.',
+          'Your devices',
+          '${store.phones.where((p) => p.online).length} online · ${store.phones.length} saved · Select a phone to start',
         ),
+        if (store.phones.isNotEmpty) ...[
+          Text('Your phones', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 760 ? 2 : 1;
+              final width =
+                  (constraints.maxWidth - (columns - 1) * 12) / columns;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: store.phones
+                    .map(
+                      (phone) =>
+                          SizedBox(width: width, child: phoneCard(phone)),
+                    )
+                    .toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
         Panel(
           child: Row(
             children: [
@@ -752,6 +776,160 @@ class _HomeState extends State<Home> {
     );
   }
 
+  Widget phoneCard(PhoneSummary phone) {
+    final selected = phone.connections.any((d) => d.serial == store.selected);
+    final colors = Theme.of(context).colorScheme;
+    final statuses = phone.connections
+        .map((d) => store.linkSetup[d.serial])
+        .whereType<String>()
+        .toSet();
+    final preferred = phone.preferred;
+    final internet = preferred?.relay == true;
+    return Card(
+      color: selected
+          ? colors.primaryContainer.withValues(alpha: .3)
+          : colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: selected
+              ? beamBlue
+              : colors.outlineVariant.withValues(alpha: .4),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: phone.preferred == null
+            ? null
+            : () => store.select(phone.preferred!.serial),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.smartphone_rounded,
+                    color: phone.online ? beamBlue : colors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      phone.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Remove phone',
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: Text('Remove ${phone.name}?'),
+                          content: const Text(
+                            'Remove this phone and uninstall BeamADB Link using ADB. Automatic setup will not reinstall it. If it is offline, or uninstall disconnects its relay, connect through USB/local ADB to finish or verify removal.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Remove and uninstall'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        await store.removePhone(phone);
+                        if (mounted) await showResult(context, store);
+                      }
+                    },
+                  ),
+                  IconButton(
+                    tooltip: 'Rename phone',
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    onPressed: () async {
+                      final name = await askText(
+                        context,
+                        'Rename phone',
+                        'Choose a name you recognize',
+                        initial: phone.name,
+                      );
+                      if (name != null && name.trim().isNotEmpty) {
+                        await store.renamePhone(phone.id, name);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Chip(
+                    avatar: Icon(
+                      Icons.circle,
+                      size: 9,
+                      color: phone.online
+                          ? Colors.green
+                          : colors.onSurfaceVariant,
+                    ),
+                    label: Text(phone.online ? 'Online' : 'Offline'),
+                  ),
+                  if (phone.battery != null && phone.battery != '—')
+                    Chip(
+                      avatar: const Icon(Icons.battery_std_rounded, size: 16),
+                      label: Text(
+                        '${phone.battery}%${phone.online ? '' : ' last seen'}',
+                      ),
+                    ),
+                  if (!internet && preferred?.ready == true)
+                    Chip(
+                      label: Text(
+                        preferred!.wireless ? 'Local network' : 'USB',
+                      ),
+                    ),
+                  if (internet)
+                    const Chip(
+                      avatar: Icon(Icons.public, size: 16),
+                      label: Text('Internet'),
+                    ),
+                ],
+              ),
+              if (statuses.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    statuses.join(' · '),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              if (phone.connections.any((d) => d.state == 'unauthorized'))
+                const Text('Unlock phone and approve debugging'),
+              if (!phone.online && phone.lastSeen != null)
+                Text(
+                  'Last seen ${DateTime.tryParse(phone.lastSeen!)?.toLocal().toString().split('.').first ?? phone.lastSeen}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget actionCard(
     String title,
     String subtitle,
@@ -876,6 +1054,36 @@ class _HomeState extends State<Home> {
               onChanged: store.setReducedMotion,
             ),
             const Divider(),
+            SwitchListTile(
+              title: const Text('Device connection notifications'),
+              subtitle: const Text(
+                'The VPS reports when a phone connects or stops responding. Alerts also work while the desktop window is closed; disconnect detection takes about 35 seconds.',
+              ),
+              value: store.connectionNotifications,
+              onChanged: store.setConnectionNotifications,
+            ),
+            ...store.removedPhones.entries.map(
+              (entry) => ListTile(
+                leading: const Icon(Icons.phonelink_erase_outlined),
+                title: const Text('Removed device'),
+                subtitle: Text(entry.value),
+              ),
+            ),
+            SwitchListTile(
+              title: const Text('Set up connected phones automatically'),
+              subtitle: const Text(
+                'Install BeamADB Link and securely configure internet access on authorized ADB phones. Android approvals may still be needed.',
+              ),
+              value: store.autoSetup,
+              onChanged: store.setAutoSetup,
+            ),
+            const ListTile(
+              leading: Icon(Icons.video_library_outlined),
+              title: Text('Recordings saved automatically'),
+              subtitle: Text(
+                'Videos/BeamADB for screen and camera · Music/BeamADB for audio. Files include the phone name, capture type and date.',
+              ),
+            ),
             ListTile(
               title: const Text('ADB executable'),
               subtitle: Text(store.adb.executable),

@@ -10,3 +10,4 @@ Terminal=false
 Categories=Development;Utility;
 Keywords=adb;android;wireless;screen;camera;files;
 StartupNotify=true
+StartupWMClass=beamadb

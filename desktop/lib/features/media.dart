@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../core/adb.dart';
 import '../core/media_session.dart';
 import '../core/store.dart';
+import '../core/recordings.dart';
 import '../core/theme.dart';
 import 'widgets.dart';
 
@@ -45,6 +46,9 @@ class _MediaPageState extends State<MediaPage> {
   bool isPinned = false;
   bool starting = false;
   bool autoStarted = false;
+  Timer? recoveryTimer;
+  bool recovering = false;
+  bool hadLiveStream = false;
   final focus = FocusNode();
   final List<Process> children = [];
   String get title => switch (widget.mode) {
@@ -71,6 +75,10 @@ class _MediaPageState extends State<MediaPage> {
         stayAwake = data['stayAwake'] as bool;
       } catch (_) {}
     }
+    recoveryTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => recoverMirror(),
+    );
     session = widget.store.sessions['${widget.store.selected}:${widget.mode}'];
     session?.addListener(updated);
     _autoStart();
@@ -94,7 +102,32 @@ class _MediaPageState extends State<MediaPage> {
     }
   }
 
-  Future<void> start() async {
+  Future<void> recoverMirror() async {
+    if (!mounted ||
+        !widget.emulatorMode ||
+        recovering ||
+        starting ||
+        !hadLiveStream ||
+        !widget.store.ready) {
+      return;
+    }
+    final routeChanged =
+        session != null && session!.device != widget.store.selected;
+    if (!routeChanged &&
+        session?.status != 'Disconnected' &&
+        session?.status != 'Failed') {
+      return;
+    }
+    recovering = true;
+    try {
+      await session?.stop();
+      if (mounted && hadLiveStream) await start(quiet: true);
+    } finally {
+      recovering = false;
+    }
+  }
+
+  Future<void> start({bool quiet = false}) async {
     if (widget.mode == 'screen' && !widget.emulatorMode) {
       await widget.store.openMirror(
         quality: quality,
@@ -124,10 +157,10 @@ class _MediaPageState extends State<MediaPage> {
     await widget.store.operation(
       'Start ${title.toLowerCase()}',
       (_) => session!.start(
-        maxSize: quality,
+        maxSize: device.relay ? quality.clamp(0, 1280) : quality,
         camera: camera,
-        fps: fps,
-        bitrate: bitrate,
+        fps: device.relay ? fps.clamp(0, 30) : fps,
+        bitrate: device.relay ? bitrate.clamp(0, 2000000) : bitrate,
         stayAwake: stayAwake,
         cameraRotation: cameraRotation,
         cameraAudio: cameraAudio,
@@ -137,11 +170,15 @@ class _MediaPageState extends State<MediaPage> {
     if (mounted) {
       setState(() {});
       focus.requestFocus();
-      await showResult(context, widget.store);
+      if (!quiet) await showResult(context, widget.store);
     }
   }
 
   void updated() {
+    if (session?.status == 'Live') hadLiveStream = true;
+    if (session?.status == 'Stopped' && !recovering && !starting) {
+      hadLiveStream = false;
+    }
     if (widget.emulatorMode && session != null) {
       stdout.writeln(
         '$mirrorStatusPrefix${jsonEncode({'status': session!.status, 'detail': session!.detail})}',
@@ -150,10 +187,15 @@ class _MediaPageState extends State<MediaPage> {
     if (mounted) setState(() {});
   }
 
+  Future<void> stopStream() async {
+    hadLiveStream = false;
+    await session?.stop();
+  }
+
   Future<void> detached() async {
     final device = widget.store.device;
     if (device == null) return;
-    await session?.stop();
+    await stopStream();
     await widget.store.operation('Open separate window', (_) async {
       final process = await Process.start(
         Platform.resolvedExecutable,
@@ -180,16 +222,26 @@ class _MediaPageState extends State<MediaPage> {
             await File(path).length() == 0) {
           throw const BeamException('No recording data was saved.');
         }
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Saved to $path')));
+        }
       });
     } else {
-      final location = await getSaveLocation(
-        suggestedName: 'BeamADB-${DateTime.now().millisecondsSinceEpoch}.mkv',
-      );
-      if (location == null) return;
-      await widget.store.operation(
-        'Start recording',
-        (_) => session!.record(location.path),
-      );
+      await widget.store.operation('Start recording', (_) async {
+        final phone = widget.store.phones
+            .where(
+              (p) =>
+                  p.connections.any((d) => d.serial == widget.store.selected),
+            )
+            .firstOrNull;
+        final path = await recordingPath(
+          widget.mode,
+          phone?.name ?? widget.store.device?.label ?? 'Phone',
+        );
+        await session!.record(path);
+      });
     }
     if (mounted) await showResult(context, widget.store);
   }
@@ -211,6 +263,7 @@ class _MediaPageState extends State<MediaPage> {
 
   @override
   void dispose() {
+    recoveryTimer?.cancel();
     session?.removeListener(updated);
     focus.dispose();
     super.dispose();
@@ -269,7 +322,7 @@ class _MediaPageState extends State<MediaPage> {
                   buttonWidth: 32,
                   buttonHeight: 26,
                   onClose: () async {
-                    await session?.stop();
+                    await stopStream();
                     await windowManager.destroy();
                     exit(0);
                   },
@@ -627,7 +680,7 @@ class _MediaPageState extends State<MediaPage> {
               onPressed: starting
                   ? null
                   : active
-                  ? () => mirror != null ? mirror.stop() : session?.stop()
+                  ? () => mirror != null ? mirror.stop() : stopStream()
                   : !widget.store.ready || widget.runtimeError != null
                   ? null
                   : start,

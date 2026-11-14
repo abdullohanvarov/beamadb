@@ -15,6 +15,12 @@ class Device {
   final String serial, state, model;
   const Device(this.serial, this.state, this.model);
   bool get ready => state == 'device';
+  bool get relay => serial.startsWith('127.0.0.1:');
+  int get routePriority => !wireless
+      ? 0
+      : relay
+      ? 2
+      : 1;
   bool get wireless =>
       serial.contains(':') || serial.contains('_adb-tls-connect');
   String get label => model.replaceAll('_', ' ');
